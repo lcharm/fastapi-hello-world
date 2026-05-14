@@ -99,10 +99,27 @@ async def ask_doubao(base64_image, prompt):
                 model="doubao-seed-2-0-mini-260428",
                 messages=[
                     {
+                        "role": "system",
+                        "content": (
+                            "你是一个严谨的教育辅助AI。你只输出结构化的解题内容，绝不输出任何客套、废话、开场白或结束语。\n\n"
+                            "格式强约束：\n"
+                            "1. 所有数学公式必须使用标准 LaTeX，行内用 $...$，独立公式用 $$...$$。\n"
+                            "2. 绝对禁止使用 Markdown 加粗符号（**）。\n"
+                            "3. 如果是选择题，必须逐项分析 A、B、C、D 四个选项的对错原因，绝不允许只解释正确选项。"
+                        ),
+                    },
+                    {
                         "role": "user",
                         "content": [
                             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}},
-                            {"type": "text", "text": prompt}
+                            {"type": "text", "text": (
+                                "请识别图片中的题目，并严格按照以下结构输出：\n\n"
+                                "【答案】: (仅输出最终选项或结果)\n"
+                                "【解答】:\n"
+                                "[思路点拨] (限50字以内，仅概括核心考点)\n"
+                                "[题目详解] (要求步骤极简，直接列式计算)\n\n"
+                                "请直接输出，以“【答案】”开头："
+                            )}
                         ]
                     }
                 ],
