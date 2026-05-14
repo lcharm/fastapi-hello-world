@@ -1,14 +1,30 @@
+﻿from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, UploadFile, File, Security, HTTPException, Depends
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import base64
 import asyncio
 import json
 import os
-import random
 from openai import AsyncOpenAI
+import logging
+import time
+import uuid
 import uvicorn
 
-app = FastAPI(title="AI多模态解题与DeepSeek裁判系统")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
+logger = logging.getLogger(__name__)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global REQUEST_SEMAPHORE
+    REQUEST_SEMAPHORE = asyncio.Semaphore(3)
+    yield
+    REQUEST_SEMAPHORE = None
+
+
+app = FastAPI(title="AI多模态解题与DeepSeek裁判系统", lifespan=lifespan)
 
 # ================= 鉴权逻辑 =================
 security = HTTPBearer()
@@ -31,17 +47,25 @@ glm_keys = os.getenv("GLM_KEYS", "你的默认GLMkey").split(",")
 doubao_keys = os.getenv("DOUBAO_KEYS", "你的默认豆包key").split(",")
 deepseek_keys = os.getenv("DEEPSEEK_KEYS", "你的默认DeepSeekkey").split(",")
 
-API_TIMEOUT = int(os.getenv("API_TIMEOUT", "60"))
+API_TIMEOUT = int(os.getenv("API_TIMEOUT", "90"))
 
 FAILURE_MARKER = "[请求失败]"
 
+REQUEST_SEMAPHORE = None
+
+
+_key_index = {}
+
 
 def get_client(keys_pool, base_url):
-    return AsyncOpenAI(api_key=random.choice(keys_pool), base_url=base_url)
+    idx = _key_index.get(base_url, 0)
+    _key_index[base_url] = idx + 1
+    return AsyncOpenAI(api_key=keys_pool[idx % len(keys_pool)], base_url=base_url)
 
 
 # ================= 2. 核心调用逻辑 =================
-async def ask_qwen(base64_image, prompt):
+async def ask_qwen(base64_image, prompt, request_id=""):
+    t0 = time.time()
     client = get_client(qwen_keys, "https://dashscope.aliyuncs.com/compatible-mode/v1")
     try:
         response = await asyncio.wait_for(
@@ -61,12 +85,17 @@ async def ask_qwen(base64_image, prompt):
             ),
             timeout=API_TIMEOUT
         )
+        elapsed = time.time() - t0
+        logger.info(f"[{request_id}] 千问 OK {elapsed:.1f}s")
         return response.choices[0].message.content
     except Exception as e:
+        elapsed = time.time() - t0
+        logger.warning(f"[{request_id}] 千问 FAIL {elapsed:.1f}s: {e}")
         return f"{FAILURE_MARKER}: {e}"
 
 
-async def ask_glm(base64_image, prompt):
+async def ask_glm(base64_image, prompt, request_id=""):
+    t0 = time.time()
     client = get_client(glm_keys, "https://open.bigmodel.cn/api/paas/v4")
     try:
         response = await asyncio.wait_for(
@@ -82,16 +111,21 @@ async def ask_glm(base64_image, prompt):
                     }
                 ],
                 temperature=0.1,
-                max_tokens=4096
+                max_tokens=16384,
+                extra_body={"thinking": {"type": "enabled", "budget_tokens": 4096}}
             ),
             timeout=API_TIMEOUT
         )
+        elapsed = time.time() - t0
+        logger.info(f"[{request_id}] GLM OK {elapsed:.1f}s")
         return response.choices[0].message.content
     except Exception as e:
+        elapsed = time.time() - t0
+        logger.warning(f"[{request_id}] GLM FAIL {elapsed:.1f}s: {e}")
         return f"{FAILURE_MARKER}: {e}"
 
-
-async def ask_doubao(base64_image, prompt):
+async def ask_doubao(base64_image, prompt, request_id=""):
+    t0 = time.time()
     client = get_client(doubao_keys, "https://ark.cn-beijing.volces.com/api/v3")
     try:
         response = await asyncio.wait_for(
@@ -128,9 +162,14 @@ async def ask_doubao(base64_image, prompt):
             ),
             timeout=API_TIMEOUT
         )
+        elapsed = time.time() - t0
+        logger.info(f"[{request_id}] 豆包 OK {elapsed:.1f}s")
         return response.choices[0].message.content
     except Exception as e:
+        elapsed = time.time() - t0
+        logger.warning(f"[{request_id}] 豆包 FAIL {elapsed:.1f}s: {e}")
         return f"{FAILURE_MARKER}: {e}"
+
 
 
 async def judge_answers(comparison_text, survivor_count):
@@ -163,35 +202,46 @@ async def judge_answers(comparison_text, survivor_count):
 
     user_prompt = task_desc + "\n\n" + comparison_text
 
-    try:
-        response = await asyncio.wait_for(
-            client.chat.completions.create(
-                model="deepseek-v4-pro",
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.1
-            ),
-            timeout=API_TIMEOUT
-        )
-        raw_result = response.choices[0].message.content
-        return json.loads(raw_result)
-    except json.JSONDecodeError:
-        return {
-            "is_consistent": False,
-            "final_answer": "需人工核查",
-            "final_explanation": "裁判模型返回了非法 JSON，无法完成比对。",
-            "warning": "系统错误：DeepSeek 输出格式异常，请重试。"
-        }
-    except Exception as e:
-        return {
-            "is_consistent": False,
-            "final_answer": "需人工核查",
-            "final_explanation": f"裁判模型调用失败: {e}",
-            "warning": "裁判系统不可用，以下为原始模型输出，请人工判断。"
-        }
+    max_retries = 2
+    for attempt in range(max_retries):
+        current_prompt = user_prompt
+        current_temp = 0.1
+        if attempt > 0:
+            current_prompt = user_prompt + "\n\n警告：你上一次输出的不是合法的 JSON，请严格检查括号闭合，确保所有花括号、方括号、引号成对出现。"
+            current_temp = 0.5
+
+        try:
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model="deepseek-v4-pro",
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": current_prompt}
+                    ],
+                    temperature=current_temp
+                ),
+                timeout=API_TIMEOUT
+            )
+            raw_result = response.choices[0].message.content
+            return json.loads(raw_result)
+        except json.JSONDecodeError:
+            if attempt < max_retries - 1:
+                logger.warning(f"DeepSeek JSON 解析失败，重试 {attempt + 1}/{max_retries - 1}")
+                continue
+            return {
+                "is_consistent": False,
+                "final_answer": "需人工核查",
+                "final_explanation": "裁判模型返回了非法 JSON，无法完成比对。",
+                "warning": "系统错误：DeepSeek 输出格式异常，请重试。"
+            }
+        except Exception as e:
+            return {
+                "is_consistent": False,
+                "final_answer": "需人工核查",
+                "final_explanation": f"裁判模型调用失败: {e}",
+                "warning": "裁判系统不可用，以下为原始模型输出，请人工判断。"
+            }
 
 
 # ================= 3. 路由网关注入鉴权与主逻辑 =================
@@ -205,6 +255,25 @@ MODEL_MAP = [
 
 @app.post("/solve")
 async def solve_problem(file: UploadFile = File(...), token: str = Security(verify_token)):
+    request_id = str(uuid.uuid4())[:8]
+    t_start = time.time()
+    logger.info(f"[{request_id}] 收到解题请求")
+
+    if REQUEST_SEMAPHORE is None:
+        logger.error(f"[{request_id}] 信号量未初始化，拒绝请求")
+        return JSONResponse(status_code=503, content={"status": "error", "message": "服务正在启动，请稍后重试"})
+
+    acquired = False
+    try:
+        await asyncio.wait_for(REQUEST_SEMAPHORE.acquire(), timeout=10)
+        acquired = True
+    except asyncio.TimeoutError:
+        logger.warning(f"[{request_id}] 服务繁忙，排队超时")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "busy", "message": "服务繁忙，前面还有排队请求，请稍后重试"}
+        )
+
     try:
         contents = await file.read()
         base64_image = base64.b64encode(contents).decode('utf-8')
@@ -219,16 +288,16 @@ async def solve_problem(file: UploadFile = File(...), token: str = Security(veri
         1. 所有数学公式必须使用标准 LaTeX，行内用 $...$，独立公式用 $$...$$。
         2. 绝对禁止在数学公式内外使用 Markdown 加粗符号（**）。"""
 
-        print("1. 正在同时呼叫千问、GLM、豆包 (三路并发)...")
-        task1 = ask_qwen(base64_image, prompt_text)
-        task2 = ask_glm(base64_image, prompt_text)
-        task3 = ask_doubao(base64_image, prompt_text)
+        logger.info(f"[{request_id}] 三路并发呼叫开始")
+        task1 = ask_qwen(base64_image, prompt_text, request_id)
+        task2 = ask_glm(base64_image, prompt_text, request_id)
+        task3 = ask_doubao(base64_image, prompt_text, request_id)
         raw_results = await asyncio.gather(task1, task2, task3)
 
         # 去名化映射 + 幸存者检测
         all_items = []
         for (public_name, internal_name), raw_content in zip(MODEL_MAP, raw_results):
-            is_alive = not isinstance(raw_content, Exception) and FAILURE_MARKER not in str(raw_content)
+            is_alive = FAILURE_MARKER not in str(raw_content)
             all_items.append({
                 "id": public_name,
                 "internal_name": internal_name,
@@ -249,6 +318,8 @@ async def solve_problem(file: UploadFile = File(...), token: str = Security(veri
 
         # 0 幸存者：全员阵亡
         if survivor_count == 0:
+            elapsed = time.time() - t_start
+            logger.error(f"[{request_id}] 全员阵亡 {elapsed:.1f}s")
             return {
                 "status": "error",
                 "message": "所有模型均响应超时，请检查网络或 API Key 后重试。",
@@ -260,10 +331,11 @@ async def solve_problem(file: UploadFile = File(...), token: str = Security(veri
             f"【{s['id']}答案】\n{s['content']}" for s in survivors
         )
 
-        print(f"2. 幸存模型数: {survivor_count}，已唤醒 DeepSeek 进行{'清洗' if survivor_count == 1 else '三方比对'}...")
+        logger.info(f"[{request_id}] 幸存 {survivor_count} 路，唤醒 DeepSeek 比对...")
         final_judgement = await judge_answers(comparison_text, survivor_count)
 
-        print("3. 比对完成，返回最终结果！")
+        elapsed = time.time() - t_start
+        logger.info(f"[{request_id}] 完成 {elapsed:.1f}s")
         return {
             "status": "success",
             "survivor_count": survivor_count,
@@ -272,12 +344,25 @@ async def solve_problem(file: UploadFile = File(...), token: str = Security(veri
         }
 
     except Exception as e:
+        elapsed = time.time() - t_start
+        logger.error(f"[{request_id}] 异常 {elapsed:.1f}s: {e}")
         return {"status": "error", "message": str(e)}
+
+    finally:
+        REQUEST_SEMAPHORE.release()
 
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "models": {
+            "qwen": "configured" if qwen_keys != ["你的默认千问key"] else "unconfigured",
+            "glm": "configured" if glm_keys != ["你的默认GLMkey"] else "unconfigured",
+            "doubao": "configured" if doubao_keys != ["你的默认豆包key"] else "unconfigured",
+            "deepseek": "configured" if deepseek_keys != ["你的默认DeepSeekkey"] else "unconfigured",
+        }
+    }
 
 
 if __name__ == "__main__":
