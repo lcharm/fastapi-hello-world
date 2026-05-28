@@ -56,17 +56,39 @@ REQUEST_SEMAPHORE = None
 
 _key_index = {}
 
+# 预创建客户端池，避免每次请求重复建连/TLS握手
+_CLIENT_POOLS = {
+    "https://dashscope.aliyuncs.com/compatible-mode/v1": [
+        AsyncOpenAI(api_key=k, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+        for k in qwen_keys
+    ],
+    "https://open.bigmodel.cn/api/paas/v4": [
+        AsyncOpenAI(api_key=k, base_url="https://open.bigmodel.cn/api/paas/v4")
+        for k in glm_keys
+    ],
+    "https://ark.cn-beijing.volces.com/api/v3": [
+        AsyncOpenAI(api_key=k, base_url="https://ark.cn-beijing.volces.com/api/v3")
+        for k in doubao_keys
+    ],
+    "https://api.deepseek.com/v1": [
+        AsyncOpenAI(api_key=k, base_url="https://api.deepseek.com/v1")
+        for k in deepseek_keys
+    ],
+}
 
-def get_client(keys_pool, base_url):
+
+def get_client(base_url):
+    """轮转选择预建客户端，不复建 HTTP 连接"""
     idx = _key_index.get(base_url, 0)
     _key_index[base_url] = idx + 1
-    return AsyncOpenAI(api_key=keys_pool[idx % len(keys_pool)], base_url=base_url)
+    pool = _CLIENT_POOLS[base_url]
+    return pool[idx % len(pool)]
 
 
 # ================= 2. 核心调用逻辑 =================
 async def ask_qwen(base64_image, prompt, request_id=""):
     t0 = time.time()
-    client = get_client(qwen_keys, "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    client = get_client("https://dashscope.aliyuncs.com/compatible-mode/v1")
     try:
         response = await asyncio.wait_for(
             client.chat.completions.create(
@@ -96,7 +118,7 @@ async def ask_qwen(base64_image, prompt, request_id=""):
 
 async def ask_glm(base64_image, prompt, request_id=""):
     t0 = time.time()
-    client = get_client(glm_keys, "https://open.bigmodel.cn/api/paas/v4")
+    client = get_client("https://open.bigmodel.cn/api/paas/v4")
     try:
         response = await asyncio.wait_for(
             client.chat.completions.create(
@@ -126,7 +148,7 @@ async def ask_glm(base64_image, prompt, request_id=""):
 
 async def ask_doubao(base64_image, prompt, request_id=""):
     t0 = time.time()
-    client = get_client(doubao_keys, "https://ark.cn-beijing.volces.com/api/v3")
+    client = get_client("https://ark.cn-beijing.volces.com/api/v3")
     try:
         response = await asyncio.wait_for(
             client.chat.completions.create(
@@ -172,8 +194,8 @@ async def ask_doubao(base64_image, prompt, request_id=""):
 
 
 
-async def judge_answers(comparison_text, survivor_count):
-    client = get_client(deepseek_keys, "https://api.deepseek.com/v1")
+async def judge_answers(comparison_text, survivor_count, request_id=""):
+    client = get_client("https://api.deepseek.com/v1")
 
     if survivor_count == 1:
         task_desc = "当前仅有 1 份答案，你无法进行交叉比对。请仅做格式清洗（LaTeX 标准化），并直接采纳该答案。"
@@ -224,10 +246,11 @@ async def judge_answers(comparison_text, survivor_count):
                 timeout=API_TIMEOUT
             )
             raw_result = response.choices[0].message.content
+            logger.info(f"[{request_id}] DeepSeek 裁判 OK")
             return json.loads(raw_result)
         except json.JSONDecodeError:
             if attempt < max_retries - 1:
-                logger.warning(f"DeepSeek JSON 解析失败，重试 {attempt + 1}/{max_retries - 1}")
+                logger.warning(f"[{request_id}] DeepSeek JSON 解析失败，重试 {attempt + 1}/{max_retries - 1}")
                 continue
             return {
                 "is_consistent": False,
@@ -332,7 +355,7 @@ async def solve_problem(file: UploadFile = File(...), token: str = Security(veri
         )
 
         logger.info(f"[{request_id}] 幸存 {survivor_count} 路，唤醒 DeepSeek 比对...")
-        final_judgement = await judge_answers(comparison_text, survivor_count)
+        final_judgement = await judge_answers(comparison_text, survivor_count, request_id)
 
         elapsed = time.time() - t_start
         logger.info(f"[{request_id}] 完成 {elapsed:.1f}s")
