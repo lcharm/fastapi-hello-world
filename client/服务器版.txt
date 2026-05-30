@@ -1,0 +1,100 @@
+部署步骤（以阿里云/腾讯云轻量应用服务器为例）                                                                
+  1. 买服务器，选配置
+
+  教育场景 GPU 不是必须的——你调的是各厂的 API，自己服务器只做转发和编排。建议：
+
+  ┌──────┬──────────────────┐
+  │ 配置 │       推荐       │
+  ├──────┼──────────────────┤
+  │ CPU  │ 2 核             │
+  ├──────┼──────────────────┤
+  │ 内存 │ 2-4 GB           │
+  ├──────┼──────────────────┤
+  │ 系统 │ Ubuntu 22.04     │
+  ├──────┼──────────────────┤
+  │ 带宽 │ 3-5 Mbps（够用） │
+  └──────┴──────────────────┘
+
+  国内云现在轻量应用服务器一年几十块到一百多。
+
+  2. 把后端代码搬上去
+
+  # 在服务器上
+  git clone <你的仓库>
+  cd render
+  pip install -r requirements.txt
+
+  3. 配环境变量
+
+  export QWEN_KEYS="sk-xxx,sk-yyy"
+  export GLM_KEYS="..."
+  export DOUBAO_KEYS="..."
+  export DEEPSEEK_KEYS="..."
+  export API_TOKEN="ai_boss_2026"
+  export PORT=8000
+
+  4. 用 systemd 保活
+
+  # /etc/systemd/system/ai-solver.service
+  [Unit]
+  Description=AI Solver Backend
+  After=network.target
+
+  [Service]
+  Type=simple
+  User=ubuntu
+  WorkingDirectory=/home/ubuntu/render
+  EnvironmentFile=/home/ubuntu/render/.env
+  ExecStart=/usr/bin/python3 main.py
+  Restart=always
+
+  [Install]
+  WantedBy=multi-user.target
+
+  sudo systemctl enable --now ai-solver
+
+  5. 前端改一行 URL
+
+  在你的 index.html 里，把：
+
+  const API_BASE = 'https://fastapi-four-ai.onrender.com';
+
+  改成：
+
+  const API_BASE = 'http://你的服务器IP:8000';
+
+  如果绑了域名 + 配了 SSL（用 certbot + nginx 反代），就改成 https://你的域名。
+
+  ---
+  跟现在 Render 的对比
+
+  ┌──────────────┬──────────────────────────┬──────────────────────────────┐
+  │              │       Render 免费        │         自购云服务器         │
+  ├──────────────┼──────────────────────────┼──────────────────────────────┤
+  │ 冷启动       │ 15 分钟休眠，唤醒 30-60s │ 不存在                       │
+  ├──────────────┼──────────────────────────┼──────────────────────────────┤
+  │ 唤醒逻辑     │ 需要前端轮询 /health     │ 不需要，可以删掉那 45 次轮询 │
+  ├──────────────┼──────────────────────────┼──────────────────────────────┤
+  │ SSL          │ 自动配                   │ 需要自己配 certbot           │
+  ├──────────────┼──────────────────────────┼──────────────────────────────┤
+  │ 国内访问速度 │ 慢（海外节点）           │ 快（国内机房）               │
+  ├──────────────┼──────────────────────────┼──────────────────────────────┤
+  │ 费用         │ 免费                     │ 几十~百元/年                 │
+  └──────────────┴──────────────────────────┴──────────────────────────────┘
+
+  ---
+  到时候前端可以简化
+
+  上了自己服务器后，唤醒+重试那坨代码可以直接切回最简版本：
+
+  const response = await fetch(`${API_BASE}/solve`, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ai_boss_2026' },
+    body: formData
+  });
+
+  因为不存在冷启动了，也不需要 SSL 重试。建议保留一个简单的 1 次重试兜底网络抖动就好。
+
+  ---
+  本质上你现在做的就是在自己电脑上写了一个桌面客户端 + 一个云端
+  API，这个分层是对的。后面服务器怎么换，客户端只改一个 URL。

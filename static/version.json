@@ -1,5 +1,5 @@
 {
-  "current": "v1.6",
+  "current": "v1.7",
   "versions": {
     "v1.5": {
       "date": "2026-05-30",
@@ -8,7 +8,12 @@
     },
     "v1.6": {
       "date": "2026-05-30",
-      "note": "修复版本号时序bug：改用IPC拉取版本信息，彻底解决下载成功却显示离线的问题",
+      "note": "IPC方式拉取版本（有bug：旧版主进程无此handler导致Promise悬空）",
+      "files": ["index.html", "tailwind.css", "main.js"]
+    },
+    "v1.7": {
+      "date": "2026-05-30",
+      "note": "改用轮询window.__APP_*变量获取版本，兼容任意版本主进程",
       "files": ["index.html", "tailwind.css", "main.js"]
     }
   }
