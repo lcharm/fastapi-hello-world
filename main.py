@@ -3,6 +3,7 @@
 from fastapi import FastAPI, UploadFile, File, Security, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.staticfiles import StaticFiles
 import base64
 import asyncio
 import json
@@ -392,6 +393,9 @@ async def health_check():
         }
     }
 
+
+# 挂载静态资源目录（前端热更新 + 版本管理）
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 if __name__ == "__main__":
     uvicorn.run(
