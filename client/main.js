@@ -29,6 +29,21 @@ function getLatestCachedVersion() {
   } catch (_) { return null }
 }
 
+// 版本号比对：云端版本严格大于本地版本才返回 true
+function isRemoteNewer(remoteVer, localVer) {
+  if (!remoteVer || !localVer) return false
+  const r = String(remoteVer).replace(/^v/, '').split('.').map(Number)
+  const l = String(localVer).replace(/^v/, '').split('.').map(Number)
+  const maxLen = Math.max(r.length, l.length)
+  for (let i = 0; i < maxLen; i++) {
+    const numR = r[i] || 0
+    const numL = l[i] || 0
+    if (numR > numL) return true
+    if (numR < numL) return false
+  }
+  return false
+}
+
 // ========== 工具函数 ==========
 
 function httpGet(url) {
@@ -188,7 +203,13 @@ function createMainWindow(updateInfo) {
 
   mainWindow.setMenu(null)
 
-  const indexPath = updateInfo.cacheDir
+  // 核心改动：仅当云端版本严格大于本地打包版本时，才加载云端缓存
+  // 否则优先使用内置本地文件，避免云端回滚或版本相同时加载旧缓存
+  const localVersion = app.getVersion()
+  const remoteVersion = updateInfo.version
+  const useCache = !!(updateInfo.cacheDir && isRemoteNewer(remoteVersion, localVersion))
+
+  const indexPath = useCache
     ? path.join(updateInfo.cacheDir, 'index.html')
     : path.join(__dirname, 'index.html')
 
