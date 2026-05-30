@@ -108,14 +108,18 @@ async function checkForUpdates(splash) {
     const versionJson = await httpGet(`${UPDATE_SERVER}/static/version.json`)
     manifest = JSON.parse(versionJson)
   } catch (err) {
-    splashUpdate(splash, '无法连接服务器', '将使用本地内置版本启动', 0)
-    return { cacheDir: null, version: getLatestCachedVersion(), manifest: null, updateFailed: true }
+    const fallbackVer1 = getLatestCachedVersion()
+    const fallbackDir1 = fallbackVer1 ? path.join(CACHE_DIR, fallbackVer1) : null
+    splashUpdate(splash, '无法连接服务器', fallbackVer1 ? '将使用缓存版本 ' + fallbackVer1 : '将使用内置版本启动', 0)
+    return { cacheDir: fallbackDir1, version: fallbackVer1, manifest: null, updateFailed: true }
   }
 
   const targetVersion = manifest.current
   if (!targetVersion || !manifest.versions || !manifest.versions[targetVersion]) {
-    splashUpdate(splash, '版本清单无效', '将使用本地内置版本启动', 0)
-    return { cacheDir: null, version: getLatestCachedVersion(), manifest, updateFailed: true }
+    const fallbackVer2 = getLatestCachedVersion()
+    const fallbackDir2 = fallbackVer2 ? path.join(CACHE_DIR, fallbackVer2) : null
+    splashUpdate(splash, '版本清单无效', fallbackVer2 ? '将使用缓存版本 ' + fallbackVer2 : '将使用内置版本启动', 0)
+    return { cacheDir: fallbackDir2, version: fallbackVer2, manifest, updateFailed: true }
   }
 
   const versionInfo = manifest.versions[targetVersion]
@@ -136,8 +140,10 @@ async function checkForUpdates(splash) {
         path.join(versionDir, file)
       )
     } catch (err) {
-      splashUpdate(splash, '下载失败', file + ': ' + err.message, 0)
-      return { cacheDir: null, version: getLatestCachedVersion(), manifest, updateFailed: true }
+      const fallbackVer3 = getLatestCachedVersion()
+      const fallbackDir3 = fallbackVer3 ? path.join(CACHE_DIR, fallbackVer3) : null
+      splashUpdate(splash, '下载失败', file + ': ' + err.message + (fallbackVer3 ? '，回退到缓存版本 ' + fallbackVer3 : ''), 0)
+      return { cacheDir: fallbackDir3, version: fallbackVer3, manifest, updateFailed: true }
     }
   }
 
