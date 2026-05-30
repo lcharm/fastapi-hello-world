@@ -1,6 +1,6 @@
 {
   "name": "ai_solver_client",
-  "version": "1.9.0",
+  "version": "1.1.0",
   "main": "main.js",
   "description": "AI多模态智能审题工作台",
   "author": "AI Boss",
