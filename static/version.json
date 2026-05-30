@@ -1,14 +1,14 @@
 {
-  "current": "v1.5",
+  "current": "v1.6",
   "versions": {
-    "v1.4": {
-      "date": "2026-05-30",
-      "note": "简化设计：去掉通道概念，本地测试好用直接推服务器，更新失败可一键重试",
-      "files": ["index.html", "tailwind.css", "main.js"]
-    },
     "v1.5": {
       "date": "2026-05-30",
-      "note": "修复版本显示：右上角固定悬浮版本号，去掉内置版本文字，更新失败回退到缓存版本",
+      "note": "版本号右上角固定悬浮，去掉内置版本文字，更新失败回退缓存版本",
+      "files": ["index.html", "tailwind.css", "main.js"]
+    },
+    "v1.6": {
+      "date": "2026-05-30",
+      "note": "修复版本号时序bug：改用IPC拉取版本信息，彻底解决下载成功却显示离线的问题",
       "files": ["index.html", "tailwind.css", "main.js"]
     }
   }
