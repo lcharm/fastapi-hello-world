@@ -1,5 +1,5 @@
 {
-  "current": "v1.7",
+  "current": "v1.8",
   "versions": {
     "v1.5": {
       "date": "2026-05-30",
@@ -14,6 +14,11 @@
     "v1.7": {
       "date": "2026-05-30",
       "note": "改用轮询window.__APP_*变量获取版本，兼容任意版本主进程",
+      "files": ["index.html", "tailwind.css", "main.js"]
+    },
+    "v1.8": {
+      "date": "2026-05-30",
+      "note": "配置化服务器地址+重试按钮唤醒逻辑+更新失败回退缓存而非内置版本",
       "files": ["index.html", "tailwind.css", "main.js"]
     }
   }

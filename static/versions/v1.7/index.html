@@ -153,6 +153,25 @@
 
       btnRetry.addEventListener('click', async function() {
         btnRetry.disabled = true;
+        const API_BASE = window.__API_BASE__ || 'https://fastapi-four-ai.onrender.com';
+
+        // 先唤醒服务器（Render 免费实例需冷启动 30-60s），迁移到阿里云后可删除此段
+        btnRetry.innerText = '正在唤醒服务器...';
+        let serverAlive = false;
+        for (let i = 0; i < 30; i++) {
+          try {
+            const res = await fetch(`${API_BASE}/health`);
+            if (res.ok) { serverAlive = true; break; }
+          } catch (_) { /* 还没醒 */ }
+          await new Promise(r => setTimeout(r, 2000));
+        }
+        if (!serverAlive) {
+          btnRetry.disabled = false;
+          btnRetry.innerText = '立即重试';
+          alert('服务器唤醒超时，请确认网络正常后重试。');
+          return;
+        }
+
         btnRetry.innerText = '正在下载...';
         const result = await ipcRenderer.invoke('retry-update');
         if (result.ok) {
@@ -241,7 +260,8 @@
       // 重置右侧面板为默认样式
       document.getElementById('right-panel').className = "flex-[5] bg-gradient-to-br from-blue-50 to-indigo-50 p-5 rounded-xl shadow-sm border-2 border-blue-200 flex flex-col";
 
-      const API_BASE = 'https://fastapi-four-ai.onrender.com';
+      // 服务器地址由主进程注入（支持阿里云/自建服务器迁移）
+      const API_BASE = window.__API_BASE__ || 'https://fastapi-four-ai.onrender.com';
 
       try {
         // ===== 唤醒后端（Render 免费实例 15 分钟休眠后需要 30-60s 冷启动） =====

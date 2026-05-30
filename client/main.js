@@ -3,7 +3,17 @@ const path = require('path')
 const fs = require('fs')
 const https = require('https')
 
-const UPDATE_SERVER = 'https://fastapi-four-ai.onrender.com'
+// 服务器地址：环境变量 UPDATE_SERVER 优先 → config.json 中的 serverUrl → 默认 Render
+// 迁移到阿里云时只需设置环境变量或修改 config.json，无需改代码
+let UPDATE_SERVER = 'https://fastapi-four-ai.onrender.com'
+try {
+  const configPath = path.join(__dirname, 'config.json')
+  if (fs.existsSync(configPath)) {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+    if (config.serverUrl) UPDATE_SERVER = config.serverUrl
+  }
+} catch (_) { /**/ }
+if (process.env.UPDATE_SERVER) UPDATE_SERVER = process.env.UPDATE_SERVER
 const CACHE_DIR = path.join(app.getPath('userData'), 'app-cache')
 
 // 获取缓存中最新的版本号（作为更新失败时的回退显示）
@@ -183,12 +193,13 @@ function createMainWindow(updateInfo) {
     }
   })
 
-  // 注入版本信息（渲染进程轮询读取，兼容 IPC 未就绪的情况）
+  // 注入版本信息与服务器地址（渲染进程轮询读取，兼容 IPC 未就绪的情况）
   mainWindow.webContents.on('did-finish-load', () => {
     mainWindow.webContents.executeJavaScript(`
       window.__APP_VERSION__ = ${JSON.stringify(updateInfo.version)};
       window.__APP_MANIFEST__ = ${JSON.stringify(updateInfo.manifest)};
       window.__APP_UPDATE_FAILED__ = ${JSON.stringify(updateInfo.updateFailed)};
+      window.__API_BASE__ = ${JSON.stringify(UPDATE_SERVER)};
     `)
   })
 
