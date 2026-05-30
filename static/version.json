@@ -1,9 +1,9 @@
 {
-  "current": "v1.9",
+  "current": "v1.1.0",
   "versions": {
-    "v1.9": {
+    "v1.1.0": {
       "date": "2026-05-30",
-      "note": "IPC异步拉取+Promise.race竞速+apiBase下发，彻底移除did-finish-load注入",
+      "note": "全新设计：async IPC拉取+Promise.race竞速+apiBase下发，移除did-finish-load注入，版本号体系重构",
       "files": ["index.html", "tailwind.css", "main.js"]
     },
     "v1.5": {
