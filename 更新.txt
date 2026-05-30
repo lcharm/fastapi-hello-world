@@ -1,0 +1,32 @@
+日常更新流程（之后不用再打包 exe）
+
+  1. 改代码
+  改完 index.html 或 tailwind.css 后，复制到 Render
+  仓库并新建版本号：
+  # 示例：发布 v1.2
+  mkdir -p e:/render/static/versions/v1.2
+  cp e:/AI_Solver_Client/index.html
+  e:/render/static/versions/v1.2/
+  cp e:/AI_Solver_Client/tailwind.css
+  e:/render/static/versions/v1.2/
+
+  2. 更新版本清单
+  编辑 e:/render/static/version.json，把 latest 改成 v1.2：
+  { "stable": "v1.1", "latest": "v1.2", ... }
+
+  3. 推送到 GitHub
+  cd e:/render && git add -A && git commit -m "release v1.2"   && git push
+
+  4. 同事端
+  - 测试版用户：下次启动自动更新到 v1.2
+  - 稳定版用户：暂时不动，等 v1.2 验证没问题后再改 stable
+  指向
+
+  版本回退机制
+
+  - 同事客户端右上角有 稳定版 / 测试版 下拉框
+  - 默认走稳定版通道
+  - 如果测试版有问题，切回稳定版 → 重启应用 →
+  自动恢复到上一个稳定版本
+  - 你在后端只需改 version.json 中 stable/latest
+  各自指向哪个版本，即可控制所有客户端行为

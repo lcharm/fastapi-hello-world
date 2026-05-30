@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>AI 多模态智能审题工作台</title>
+  <!-- 本地编译的 Tailwind CSS（10KB，毫秒级加载，无需外网 CDN） -->
+  <link rel="stylesheet" href="tailwind.css">
+  <!-- polyfill.io 已删除：Electron 内嵌最新 Chromium，无需 es6 polyfill，且该域名存在供应链投毒风险 -->
+  <!-- MathJax 切换到国内 bootcdn 镜像 -->
+  <script id="MathJax-script" async src="https://cdn.bootcdn.net/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.min.js"></script>
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      }
+    };
+  </script>
+  <style>
+    @keyframes fade-out-bar {
+      0%   { opacity: 1; max-height: 40px; margin-bottom: 16px; padding-top: 8px; padding-bottom: 8px; }
+      100% { opacity: 0; max-height: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
+    }
+    #notify-bar.fade-out {
+      animation: fade-out-bar 0.6s ease forwards;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 font-sans m-0 p-4 flex flex-col h-[97vh] overflow-x-hidden">
+
+  <!-- 顶部滚动通知栏：外包一层 overflow-hidden 防止水平滚动条外泄 -->
+  <div class="overflow-hidden w-full rounded-lg mb-4">
+    <div id="notify-bar" class="inline-block whitespace-nowrap bg-amber-50 border border-amber-300 text-amber-800 text-sm font-medium rounded-lg px-4 py-2">
+      ⏳ 系统休眠中，初次唤醒时间较长（约 30~60 秒），请您耐心等待...
+    </div>
+  </div>
+
+  <!-- 顶部操作区 - 悬浮卡片 -->
+  <div class="flex gap-5 items-center bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-4">
+    <button id="btn-paste" class="px-5 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5">
+      📋 从系统剪贴板读取并识别
+    </button>
+    <img id="preview" class="hidden max-h-20 max-w-[300px] border-2 border-dashed border-gray-300 rounded-lg" alt="暂无图片，请截图后点击左侧按钮" />
+    <span id="loading-text" class="text-amber-500 font-bold hidden">正在呼叫多模态大模型，请稍候...</span>
+
+    <!-- 版本通道切换 -->
+    <div class="ml-auto flex items-center gap-2 text-xs">
+      <span id="ver-badge" class="px-2 py-1 rounded-full font-bold text-white bg-green-600">v--</span>
+      <select id="channel-select" class="border border-gray-300 rounded px-2 py-1 text-xs bg-white text-gray-600 cursor-pointer">
+        <option value="stable">稳定版</option>
+        <option value="latest">测试版</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- 下方双栏布局 -->
+  <div class="flex gap-5 flex-1 overflow-hidden">
+
+    <!-- 左侧多模型参考区 -->
+<div class="flex-[4] bg-white p-5 rounded-xl shadow-sm border border-gray-100 overflow-y-auto">
+      <h3 class="text-lg font-semibold text-gray-800 mb-4">多模型原始输出参考</h3>
+      
+      <div class="border-2 border-gray-200 rounded-xl p-4 mb-4 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
+        <div class="font-semibold text-gray-500 mb-2 text-sm">千问 (qwen3-vl-flash) 输出</div>
+        <div class="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap" id="model1-res">等待识别...</div>
+      </div>
+      
+      <div class="border-2 border-gray-200 rounded-xl p-4 mb-4 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
+        <div class="font-semibold text-gray-500 mb-2 text-sm">智谱 (glm-4.6v-flashx) 输出</div>
+        <div class="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap" id="model2-res">等待识别...</div>
+      </div>
+      
+      <div class="border-2 border-gray-200 rounded-xl p-4 mb-4 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
+        <div class="font-semibold text-gray-500 mb-2 text-sm">豆包 (doubao-seed-2-0-mini-260428) 输出</div>
+        <div class="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap" id="model3-res">等待识别...</div>
+      </div>
+    </div>
+
+    <!-- 右侧终审结果区 - 凸显最终裁判区 -->
+    <div class="flex-[5] bg-gradient-to-br from-blue-50 to-indigo-50 p-5 rounded-xl shadow-sm border-2 border-blue-200 flex flex-col" id="right-panel">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="text-lg font-semibold text-gray-800 m-0">终审整合结果</h3>
+        <button id="btn-copy-result" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg shadow-sm hover:shadow-md transition-all duration-200 hidden">
+          📋 一键复制标准代码
+        </button>
+      </div>
+
+      <div id="status-badge" class="inline-block px-3 py-1.5 rounded-full font-bold text-sm mb-4 bg-gray-200 text-gray-600">
+        等待验证
+      </div>
+      <div class="text-red-600 font-bold mb-3" id="warning-msg"></div>
+      <div id="final-content" class="flex-1 border border-gray-200 rounded-lg p-4 bg-white overflow-y-auto whitespace-pre-wrap text-sm text-gray-700 leading-relaxed">
+        结果将在这里显示...
+      </div>
+    </div>
+
+  </div>
+
+<script>
+    const { clipboard, ipcRenderer } = require('electron');
+
+    // ================= 版本通道管理 =================
+    (function() {
+      const verBadge = document.getElementById('ver-badge');
+      const channelSelect = document.getElementById('channel-select');
+
+      // 主进程注入的版本信息
+      const version = window.__APP_VERSION__ || 'bundled';
+      const channel = window.__APP_CHANNEL__ || 'stable';
+
+      verBadge.innerText = 'v' + (version || '内置');
+      channelSelect.value = channel;
+
+      channelSelect.addEventListener('change', async function() {
+        const newChannel = this.value;
+        const ok = await ipcRenderer.invoke('set-channel', newChannel);
+        if (ok) {
+          alert('通道已切换为「' + (newChannel === 'stable' ? '稳定版' : '测试版') + '」，请重启应用以生效。');
+        }
+      });
+    })();
+
+    // ================= 启动时：滚动通知栏自动消失 =================
+    (function() {
+      const bar = document.getElementById('notify-bar');
+      if (!bar) return;
+      const wrapper = bar.parentElement;
+
+      // 动态测量：起始位置 = wrapper 宽度（文字左缘贴右边界），终点 = -文字宽度（文字右缘贴左边界）
+      const run = function() {
+        const wrapperWidth = wrapper.offsetWidth;
+        const textWidth = bar.scrollWidth;
+        const anim = bar.animate([
+          { transform: `translateX(${wrapperWidth}px)` },
+          { transform: `translateX(-${textWidth}px)` }
+        ], {
+          duration: 10800,
+          iterations: 3,
+          easing: 'linear'
+        });
+        anim.onfinish = function() {
+          bar.classList.add('fade-out');
+        };
+      };
+
+      // 等一小帧确保 layout 完成再跑
+      requestAnimationFrame(function() {
+        requestAnimationFrame(run);
+      });
+
+      // 兜底：40 秒后强制消失
+      setTimeout(function() {
+        if (!bar.classList.contains('fade-out')) {
+          bar.classList.add('fade-out');
+        }
+      }, 40000);
+    })();
+
+    let currentRawText = "";
+
+    // ================= 动作 1：监听“粘贴并识别”按钮 =================
+    document.getElementById('btn-paste').addEventListener('click', async () => {
+      // 1. 读取剪贴板
+      const img = clipboard.readImage();
+      if (img.isEmpty()) {
+        alert('剪贴板中没有发现图片，请先使用微信或系统截图！');
+        return;
+      }
+
+      // 🔥 修改一：防抖逻辑，禁用按钮，防止老师疯狂连点
+      const pasteBtn = document.getElementById('btn-paste');
+      pasteBtn.disabled = true;
+      pasteBtn.innerText = '⏳ 并发处理中...';
+      pasteBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+      // 显示前端预览图，切换到"加载中"状态
+      const previewImg = document.getElementById('preview');
+      previewImg.src = img.toDataURL();
+      previewImg.classList.remove('hidden');
+      document.getElementById('loading-text').style.display = 'inline';
+
+      // 清空上次的结果
+      document.getElementById('model1-res').innerText = '多模型并发思考中...';
+      document.getElementById('model2-res').innerText = '多模型并发思考中...';
+      document.getElementById('model3-res').innerText = '多模型并发思考中...';
+      document.getElementById('final-content').innerText = '等待deepseek-v4-pro大模型裁判结果...';
+      document.getElementById('status-badge').innerText = '处理中...';
+      document.getElementById('status-badge').style.background = '#ffab00'; 
+      document.getElementById('status-badge').style.color = '#172b4d';
+      document.getElementById('warning-msg').innerText = '';
+      document.getElementById('btn-copy-result').style.display = 'none';
+      // 重置右侧面板为默认样式
+      document.getElementById('right-panel').className = "flex-[5] bg-gradient-to-br from-blue-50 to-indigo-50 p-5 rounded-xl shadow-sm border-2 border-blue-200 flex flex-col";
+
+      const API_BASE = 'https://fastapi-four-ai.onrender.com';
+
+      try {
+        // ===== 唤醒后端（Render 免费实例 15 分钟休眠后需要 30-60s 冷启动） =====
+        document.getElementById('loading-text').innerText = '正在唤醒后端服务（免费实例冷启动约 30 秒）...';
+        let backendAlive = false;
+        for (let i = 0; i < 45; i++) {
+          try {
+            const res = await fetch(`${API_BASE}/health`);
+            if (res.ok) { backendAlive = true; break; }
+          } catch (_) { /* 还没醒，继续等 */ }
+          await new Promise(r => setTimeout(r, 2000));
+        }
+        if (!backendAlive) throw new Error('后端服务唤醒超时（90 秒），请稍后重试。');
+
+        // 将图片打包成 FormData
+        const buffer = img.toPNG();
+        const blob = new Blob([buffer], { type: 'image/png' });
+        const formData = new FormData();
+        formData.append('file', blob, 'clipboard.png');
+
+        // ===== 带重试的请求（SSL 握手在冷启动期间容易断） =====
+        document.getElementById('loading-text').innerText = '正在呼叫多模态大模型，请稍候...';
+        let data;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const response = await fetch(`${API_BASE}/solve`, {
+              method: 'POST',
+              headers: {
+                'Authorization': 'Bearer ai_boss_2026'
+              },
+              body: formData
+            });
+            if (!response.ok) throw new Error(`服务器 HTTP 错误: ${response.status}`);
+            data = await response.json();
+            break;
+          } catch (err) {
+            if (attempt === 2) throw err;
+            await new Promise(r => setTimeout(r, 2000));
+          }
+        }
+
+        if (data.status === 'error') throw new Error(data.message);
+
+        // 拿到结果，填坑渲染（去名化：后端返回的 key 是"模型 1/2/3"）
+        const raw = data.raw_data;
+        document.getElementById('model1-res').innerText = raw["模型 1"] || '无返回';
+        document.getElementById('model2-res').innerText = raw["模型 2"] || '无返回';
+        document.getElementById('model3-res').innerText = raw["模型 3"] || '无返回';
+
+        const finalResult = data.final_result;
+        const survivorCount = data.survivor_count;
+        const badge = document.getElementById('status-badge');
+        const rightPanel = document.getElementById('right-panel');
+
+        // 核心逻辑：根据幸存模型数量分级渲染
+        // 先清除处理中留下的 inline style，避免覆盖 className 的样式
+        badge.style.background = '';
+        badge.style.color = '';
+
+        if (survivorCount === 1) {
+          // 孤证：红色警戒
+          badge.innerText = '❌ 孤证预警：仅单模型存活';
+          badge.className = "inline-block px-3 py-1.5 rounded-full font-bold text-sm mb-4 bg-red-600 text-white animate-pulse";
+          rightPanel.className = "flex-[5] bg-red-50 p-5 rounded-xl shadow-sm border-2 border-red-500 flex flex-col";
+          document.getElementById('warning-msg').innerText = '⚠️ 警告：其他模型已阵亡。单模型输出无法交叉验证，请老师务必人工解题核对！';
+        } else {
+          // 正常多模型：按一致性判断
+          if (finalResult.is_consistent) {
+            badge.innerText = '✅ 意见一致 (可直接拷贝)';
+            badge.style.background = '#e3fcef';
+            badge.style.color = '#006644';
+            badge.className = "inline-block px-3 py-1.5 rounded-full font-bold text-sm mb-4";
+          } else {
+            badge.innerText = '⚠️ 存在分歧 (需人工核查)';
+            badge.style.background = '#ffebe6';
+            badge.style.color = '#bf2600';
+            badge.className = "inline-block px-3 py-1.5 rounded-full font-bold text-sm mb-4";
+          }
+          rightPanel.className = "flex-[5] bg-gradient-to-br from-blue-50 to-indigo-50 p-5 rounded-xl shadow-sm border-2 border-blue-200 flex flex-col";
+          document.getElementById('warning-msg').innerText = finalResult.warning || '';
+        }
+
+        // 严格匹配交付格式：答案 + 答案过程 + 解答 + 【思路点拨】...
+        currentRawText = `答案\n${finalResult.final_answer}\n解答\n${finalResult.final_explanation}`;
+
+        // 显示在界面上供 MathJax 渲染
+        document.getElementById('final-content').innerText = currentRawText;
+
+        // 显示出复制按钮
+        document.getElementById('btn-copy-result').style.display = 'inline-block';
+
+      if (window.MathJax) {
+          MathJax.typesetPromise([
+            document.getElementById('final-content'),
+            document.getElementById('model1-res'),
+            document.getElementById('model2-res'),
+            document.getElementById('model3-res')
+          ]).then(() => {
+            console.log('全局数学公式渲染完成');
+          }).catch((err) => console.log('渲染失败: ', err));
+        }
+
+      } catch (error) {
+        alert('请求失败，请检查网络或右侧控制台: ' + error.message);
+        document.getElementById('final-content').innerText = '请求异常：' + error.message;
+        const badge = document.getElementById('status-badge');
+        badge.innerText = '❌ 系统请求异常';
+        badge.className = "inline-block px-3 py-1.5 rounded-full font-bold text-sm mb-4 bg-red-600 text-white";
+        document.getElementById('right-panel').className = "flex-[5] bg-red-50 p-5 rounded-xl shadow-sm border-2 border-red-500 flex flex-col";
+      } finally {
+        // 关闭加载提示
+        document.getElementById('loading-text').style.display = 'none';
+
+        // 🔥 修改三：无论成功失败，解除防抖，恢复按钮初始状态
+        pasteBtn.disabled = false;
+        pasteBtn.innerText = '📋 从系统剪贴板读取并识别';
+        pasteBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      }
+    });
+
+    // ================= 动作 2：监听“一键复制”按钮 =================
+    document.getElementById('btn-copy-result').addEventListener('click', () => {
+      if (!currentRawText) return;
+
+      // 1. 纯文本格式：原封不动，留作备用
+      const textData = currentRawText;
+
+      // 2. 富文本格式：🔥 逆向伪造作业帮 Quill 专属 HTML 结构
+      let htmlData = currentRawText
+        // 第一步：转义 HTML 基础字符，防止文本里的 < 或 > 把页面挤爆
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        
+        // 第二步：拦截并伪造独立公式 $$...$$
+        .replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
+          const cleanFormula = formula.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/"/g, '&quot;').trim();
+          // 🔥 终极伪造：补全内部的 contenteditable="false" 骨架，骗过 onPaste 的 innerHTML 检查
+          return `<span class="ql-mathjax" latex="${cleanFormula}" mathid="undefined">&#xFEFF;<span contenteditable="false"></span>&#xFEFF;</span>`;
+        })
+        
+        // 第三步：拦截并伪造行内公式 $...$
+        .replace(/\$([^$]+)\$/g, (match, formula) => {
+          const cleanFormula = formula.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/"/g, '&quot;').trim();
+          // 🔥 同上：补全骨架
+          return `<span class="ql-mathjax" latex="${cleanFormula}" mathid="undefined">&#xFEFF;<span contenteditable="false"></span>&#xFEFF;</span>`;
+        })
+        
+        // 第四步：将普通的换行符变成 HTML 的换行标签，保持段落排版
+        .replace(/\n/g, '<br>');
+
+      // 给整个富文本套一层外壳，保证解析器有一个根节点可以遍历
+      htmlData = `<div>${htmlData}</div>`;
+
+      // 3. 将双轨数据写入系统剪贴板
+      clipboard.write({
+        text: textData,
+        html: htmlData
+      });
+
+      // UI 反馈
+      const btn = document.getElementById('btn-copy-result');
+      btn.innerText = '✅ 平台专属格式已复制！';
+      btn.style.backgroundColor = '#ff991f'; 
+
+      setTimeout(() => {
+        btn.innerText = '📋 一键复制标准代码';
+        btn.style.backgroundColor = ''; 
+      }, 2000);
+    });
+  </script>
+</body>
+</html>
