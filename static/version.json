@@ -1,6 +1,11 @@
 {
-  "current": "v1.8",
+  "current": "v1.9",
   "versions": {
+    "v1.9": {
+      "date": "2026-05-30",
+      "note": "IPC异步拉取+Promise.race竞速+apiBase下发，彻底移除did-finish-load注入",
+      "files": ["index.html", "tailwind.css", "main.js"]
+    },
     "v1.5": {
       "date": "2026-05-30",
       "note": "版本号右上角固定悬浮，去掉内置版本文字，更新失败回退缓存版本",
