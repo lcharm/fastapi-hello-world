@@ -1,25 +1,29 @@
 {
-  "stable": "v1.3",
-  "latest": "v1.3",
+  "current": "v1.4",
   "versions": {
     "v1.0": {
       "date": "2026-05-30",
-      "note": "初始版本 - 多模型审题 + DeepSeek裁判 + 一键复制",
+      "note": "初始版本",
       "files": ["index.html", "tailwind.css", "main.js"]
     },
     "v1.1": {
       "date": "2026-05-30",
-      "note": "新增自动热更新 + 通道切换 (已知bug: clipboard重复声明)",
+      "note": "自动热更新 + 通道切换 (有bug)",
       "files": ["index.html", "tailwind.css", "main.js"]
     },
     "v1.2": {
       "date": "2026-05-30",
-      "note": "修复clipboard重复声明导致粘贴按钮失效",
+      "note": "修复clipboard重复声明bug",
       "files": ["index.html", "tailwind.css", "main.js"]
     },
     "v1.3": {
       "date": "2026-05-30",
-      "note": "启动闪屏 + 可见下载进度条 + 版本状态指示灯",
+      "note": "启动闪屏 + 可见下载进度条",
+      "files": ["index.html", "tailwind.css", "main.js"]
+    },
+    "v1.4": {
+      "date": "2026-05-30",
+      "note": "简化设计：去掉通道概念，本地测试好用直接推服务器，更新失败可一键重试",
       "files": ["index.html", "tailwind.css", "main.js"]
     }
   }
