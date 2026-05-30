@@ -1,6 +1,6 @@
 {
-  "stable": "v1.2",
-  "latest": "v1.2",
+  "stable": "v1.3",
+  "latest": "v1.3",
   "versions": {
     "v1.0": {
       "date": "2026-05-30",
@@ -9,12 +9,17 @@
     },
     "v1.1": {
       "date": "2026-05-30",
-      "note": "新增自动热更新 + 稳定版/测试版通道切换 (已知bug: clipboard重复声明)",
+      "note": "新增自动热更新 + 通道切换 (已知bug: clipboard重复声明)",
       "files": ["index.html", "tailwind.css", "main.js"]
     },
     "v1.2": {
       "date": "2026-05-30",
-      "note": "修复clipboard重复声明导致粘贴按钮失效的致命bug",
+      "note": "修复clipboard重复声明导致粘贴按钮失效",
+      "files": ["index.html", "tailwind.css", "main.js"]
+    },
+    "v1.3": {
+      "date": "2026-05-30",
+      "note": "启动闪屏 + 可见下载进度条 + 版本状态指示灯",
       "files": ["index.html", "tailwind.css", "main.js"]
     }
   }
