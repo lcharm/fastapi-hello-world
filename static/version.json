@@ -1,6 +1,11 @@
 {
-  "current": "v1.1.0",
+  "current": "v1.2.0",
   "versions": {
+    "v1.2.0": {
+      "date": "2026-06-01",
+      "note": "迁移至阿里云服务器，移除Render冷启动逻辑，简化重试机制",
+      "files": ["index.html", "tailwind.css"]
+    },
     "v1.1.0": {
       "date": "2026-05-30",
       "note": "全新设计：async IPC拉取+Promise.race竞速+apiBase下发，移除did-finish-load注入，版本号体系重构",
