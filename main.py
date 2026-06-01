@@ -47,13 +47,7 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Security(secu
             )
         return username
 
-    # 2) 回退旧版 API_TOKEN 兼容
-    legacy_token = os.getenv("API_TOKEN", "ai_boss_2026")
-    if token == legacy_token:
-        logger.warning("使用了旧版 API_TOKEN 鉴权，请尽快迁移到 JWT")
-        return "legacy_admin"
-
-    # 3) 都不通过
+    # JWT 解码失败，拒绝请求
     raise HTTPException(
         status_code=401,
         detail="无效的访问令牌",
@@ -237,15 +231,16 @@ async def judge_answers(comparison_text, survivor_count, request_id=""):
         "JSON 格式如下：\n"
         "{\n"
         '  "is_consistent": ' + consistency_default + ',\n'
-        '  "final_answer": "生成答案过程（注意：要求给出具体的答案核心推导或结论过程，不要只给一个最终结果）",\n'
+        '  "final_answer": "如果是选择题，【必须】仅输出最终选项字母（如 B 或 故选B）；如果是填空/解答题，输出核心结论或简要推导过程。",\n'
         '  "final_explanation": "【思路点拨】\\nXXXX\\n\\n【题目解析】\\nXXXX"\n'
         "}\n\n"
         "内容业务规范（核心触线红线）：\n"
-        "1. 【题目解析】部分必须严格做到以下三点：\n"
+        "1. 严格区分题型：遇到选择题时，绝对不允许在 final_answer 字段中输出大段文字推导，只能输出选项结论；所有的详细推导过程必须全部放在【题目解析】中。\n"
+        "2. 【题目解析】部分必须严格做到以下三点：\n"
         "   - 不出错：解答内容每一步均不能出错，要求无错别字、无病句；必须符合当前学段的学科规范。\n"
         "   - 不跳步：解答过程要逻辑清晰，步骤严谨，不能出现影响理解的跳步，绝对不能直接使用经验性结论。\n"
         "   - 不超纲：所用知识点与解题方法均在对应学段的教材中学习过，不可使用超纲内容。\n"
-        "2. 【思路点拨】部分：根据题干分析问题，帮助学生打开思路，找到解题方法，在思路点拨中明确计算方法、运算规则等。\n\n"
+        "3. 【思路点拨】部分：根据题干分析问题，帮助学生打开思路，找到解题方法，在思路点拨中明确计算方法、运算规则等。\n\n"
         "排版清洗强约束（违背将直接导致前端页面解析崩溃）：\n"
         "1. 必须清除原始文本中所有用于强调的 Markdown 加粗符号（**）。\n"
         "2. 【致命红线】绝对禁止使用 \\( ... \\) 或 \\[ ... \\] 作为公式定界符！\n"
