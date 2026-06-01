@@ -26,21 +26,34 @@
 <body class="bg-gray-50 font-sans m-0 p-4 flex flex-col h-[98vh] overflow-x-hidden select-none">
 
   <!-- 登录遮罩层 -->
-  <div id="login-overlay" class="bg-gray-900 bg-opacity-60 flex items-center justify-center" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999;">
-    <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm">
-      <h2 class="text-xl font-bold text-gray-800 mb-1">登录审题工作台</h2>
-      <p class="text-xs text-gray-400 mb-6">请输入您的账号密码以访问AI服务</p>
-      <div class="mb-4">
-        <label class="block text-xs font-medium text-gray-600 mb-1">用户名</label>
-        <input id="login-username" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="请输入用户名">
+  <div id="login-overlay" class="flex items-center justify-center" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999; background-color: rgba(243, 244, 246, 0.65); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);">
+    <div class="bg-white w-full relative overflow-hidden" style="max-width: 380px; padding: 40px 32px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.03);">
+      
+      <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-purple-600"></div>
+
+      <div class="text-center mb-8 mt-2">
+        <div class="mx-auto flex items-center justify-center mb-4" style="width: 56px; height: 56px; border-radius: 16px; background: linear-gradient(135deg, #eff6ff, #f3e8ff); border: 1px solid rgba(255,255,255,0.6); box-shadow: inset 0 2px 4px rgba(255,255,255,0.8), 0 4px 10px rgba(0,0,0,0.03);">
+          <span class="text-2xl">✨</span>
+        </div>
+        <h2 class="text-2xl font-bold text-gray-800 tracking-tight mb-1.5">AI 审题工作台</h2>
+        <p class="text-sm text-gray-400">请输入您的内部授权账号</p>
       </div>
-      <div class="mb-6">
-        <label class="block text-xs font-medium text-gray-600 mb-1">密码</label>
-        <input id="login-password" type="password" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="请输入密码" onkeydown="if(event.key==='Enter')document.getElementById('btn-login').click()">
+
+      <div class="mb-5">
+        <label class="block text-xs font-bold text-gray-500 mb-2 tracking-wider uppercase">用户名</label>
+        <input id="login-username" type="text" class="w-full bg-gray-50 border border-gray-200 text-gray-800 px-4 py-3 text-sm transition-all duration-200" style="border-radius: 12px; outline: none;" onfocus="this.style.borderColor='#3b82f6'; this.style.backgroundColor='#fff'; this.style.boxShadow='0 0 0 4px rgba(59, 130, 246, 0.1)'" onblur="this.style.borderColor='#e5e7eb'; this.style.backgroundColor='#f9fafb'; this.style.boxShadow='none'" placeholder="Username">
       </div>
-      <div id="login-error" class="text-red-500 text-xs mb-4 hidden"></div>
-      <button id="btn-login" class="w-full py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-lg shadow-md transition-all duration-200">
-        登 录
+
+      <div class="mb-8">
+        <label class="block text-xs font-bold text-gray-500 mb-2 tracking-wider uppercase">密码</label>
+        <input id="login-password" type="password" class="w-full bg-gray-50 border border-gray-200 text-gray-800 px-4 py-3 text-sm transition-all duration-200" style="border-radius: 12px; outline: none;" onfocus="this.style.borderColor='#3b82f6'; this.style.backgroundColor='#fff'; this.style.boxShadow='0 0 0 4px rgba(59, 130, 246, 0.1)'" onblur="this.style.borderColor='#e5e7eb'; this.style.backgroundColor='#f9fafb'; this.style.boxShadow='none'" placeholder="••••••••" onkeydown="if(event.key==='Enter')document.getElementById('btn-login').click()">
+      </div>
+
+      <div id="login-error" class="text-red-500 text-xs mb-5 hidden text-center font-medium bg-red-50 py-2.5 rounded-lg border border-red-100"></div>
+
+      <button id="btn-login" class="w-full py-3.5 bg-gray-900 hover:bg-black text-white font-semibold shadow-md transition-all duration-200 flex justify-center items-center gap-2 active:scale-[0.98]" style="border-radius: 14px;">
+        进入系统
+        <svg class="w-4 h-4 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
       </button>
     </div>
   </div>
@@ -368,7 +381,7 @@
         document.getElementById('login-overlay').classList.remove('hidden');
         return;
       }
-      
+
       const img = clipboard.readImage();
       if (img.isEmpty()) {
         alert('剪贴板中没有发现图片，请先使用微信或系统截图！');
