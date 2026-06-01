@@ -166,10 +166,10 @@ async def ask_doubao(base64_image, prompt, request_id=""):
                         ),
                     },
                     {
-                        “role”: “user”,
-                        “content”: [
-                            {“type”: “image_url”, “image_url”: {“url”: f”data:image/png;base64,{base64_image}”}},
-                            {“type”: “text”, “text”: prompt}
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}},
+                            {"type": "text", "text": prompt}
                         ]
                     }
                 ],
