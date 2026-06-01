@@ -1,6 +1,11 @@
 {
-  "current": "v1.2.1",
+  "current": "v1.3.0",
   "versions": {
+    "v1.3.0": {
+      "date": "2026-06-01",
+      "note": "JWT 鉴权系统上线：登录遮罩、账号分发、封堵旧 token 后门、CSS 原生霸屏修复",
+      "files": ["index.html", "tailwind.css"]
+    },
     "v1.2.1": {
       "date": "2026-06-01",
       "note": "修正 LOCAL_UI_VERSION 版本号显示问题",
