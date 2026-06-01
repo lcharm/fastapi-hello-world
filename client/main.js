@@ -1,11 +1,11 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const http = require('http')
 const https = require('https')
 
-// 服务器地址：环境变量 UPDATE_SERVER 优先 → config.json 中的 serverUrl → 默认 Render
-// 迁移到阿里云时只需设置环境变量或修改 config.json，无需改代码
-let UPDATE_SERVER = 'https://fastapi-four-ai.onrender.com'
+// 服务器地址：环境变量 UPDATE_SERVER 优先 → config.json 中的 serverUrl → 默认阿里云
+let UPDATE_SERVER = 'http://120.27.144.30:8000'
 try {
   const configPath = path.join(__dirname, 'config.json')
   if (fs.existsSync(configPath)) {
@@ -48,7 +48,8 @@ function isRemoteNewer(remoteVer, localVer) {
 
 function httpGet(url) {
   return new Promise((resolve, reject) => {
-    https.get(url, { timeout: 15000 }, (res) => {
+    const get = url.startsWith('https://') ? https.get : http.get
+    get(url, { timeout: 15000 }, (res) => {
       if (res.statusCode !== 200) { reject(new Error(`HTTP ${res.statusCode}`)); return }
       let data = ''
       res.on('data', chunk => data += chunk)
@@ -127,26 +128,16 @@ function splashUpdate(splash, status, detail, pct) {
 async function checkForUpdates(splash) {
   splashUpdate(splash, '正在连接更新服务器...', UPDATE_SERVER, 5)
 
-  // 1. 获取版本清单（带重试唤醒，解决 Render 免费实例休眠问题）
-  //    迁移到阿里云后可简化：删除重试循环，只保留单次 httpGet
+  // 获取版本清单
   let manifest
-  for (let attempt = 0; attempt < 4; attempt++) {
-    if (attempt > 0) {
-      splashUpdate(splash, '等待服务器唤醒...', '第 ' + attempt + ' 次重试（共 3 次）', 8)
-      await new Promise(r => setTimeout(r, 8000))
-    }
-    try {
-      const versionJson = await httpGet(`${UPDATE_SERVER}/static/version.json`)
-      manifest = JSON.parse(versionJson)
-      break
-    } catch (err) {
-      if (attempt === 3) {
-        const fallbackVer1 = getLatestCachedVersion()
-        const fallbackDir1 = fallbackVer1 ? path.join(CACHE_DIR, fallbackVer1) : null
-        splashUpdate(splash, '无法连接服务器', fallbackVer1 ? '将使用缓存版本 ' + fallbackVer1 : '将使用内置版本启动', 0)
-        return { cacheDir: fallbackDir1, version: fallbackVer1, manifest: null, updateFailed: true }
-      }
-    }
+  try {
+    const versionJson = await httpGet(`${UPDATE_SERVER}/static/version.json`)
+    manifest = JSON.parse(versionJson)
+  } catch (err) {
+    const fallbackVer1 = getLatestCachedVersion()
+    const fallbackDir1 = fallbackVer1 ? path.join(CACHE_DIR, fallbackVer1) : null
+    splashUpdate(splash, '无法连接服务器', fallbackVer1 ? '将使用缓存版本 ' + fallbackVer1 : '将使用内置版本启动', 0)
+    return { cacheDir: fallbackDir1, version: fallbackVer1, manifest: null, updateFailed: true }
   }
 
   const targetVersion = manifest.current

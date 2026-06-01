@@ -1,8 +1,7 @@
 日常更新流程（之后不用再打包 exe）
 
   1. 改代码
-  改完 index.html 或 tailwind.css 后，复制到 Render
-  仓库并新建版本号：
+  改完 index.html 或 tailwind.css 后，复制到仓库并新建版本号：
   # 示例：发布 v1.2
   mkdir -p e:/render/static/versions/v1.2
   cp e:/AI_Solver_Client/index.html

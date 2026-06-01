@@ -27,7 +27,7 @@
 
   <div class="overflow-hidden w-full rounded-lg mb-3">
     <div id="notify-bar" class="inline-block whitespace-nowrap bg-amber-50 border border-amber-300 text-amber-800 text-sm font-medium rounded-lg px-4 py-2">
-      ⏳ 系统初次唤醒或长时间未用冷启动较慢（约 30~60 秒），请您耐心等待...
+      🚀 多模态 · 交叉验证 · 一键交付 — 阿里云持续在线，即时响应
     </div>
   </div>
 
@@ -207,21 +207,21 @@
     document.getElementById('btn-retry-update').addEventListener('click', async function() {
       const btnRetry = document.getElementById('btn-retry-update');
       btnRetry.disabled = true;
-      const API_BASE = window.__API_BASE__ || 'https://fastapi-four-ai.onrender.com';
+      const API_BASE = window.__API_BASE__ || 'http://120.27.144.30:8000';
 
-      btnRetry.innerText = '正在唤醒服务器...';
+      btnRetry.innerText = '正在连接服务器...';
       let serverAlive = false;
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < 3; i++) {
         try {
           const res = await fetch(`${API_BASE}/health`);
           if (res.ok) { serverAlive = true; break; }
         } catch (_) {}
-        await new Promise(r => setTimeout(r, 2000));
+        if (i < 2) await new Promise(r => setTimeout(r, 1000));
       }
       if (!serverAlive) {
         btnRetry.disabled = false;
         btnRetry.innerText = '立即同步';
-        alert('服务器唤醒超时，请确认网络正常后重试。');
+        alert('服务器连接失败，请确认网络正常后重试。');
         return;
       }
 
@@ -303,19 +303,19 @@
       document.getElementById('btn-copy-result').style.display = 'none';
       document.getElementById('right-panel').className = "flex-[5] bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl shadow-sm border-2 border-blue-200 flex flex-col";
 
-      const API_BASE = window.__API_BASE__ || 'https://fastapi-four-ai.onrender.com';
+      const API_BASE = window.__API_BASE__ || 'http://120.27.144.30:8000';
 
       try {
-        document.getElementById('loading-text').innerText = '正在唤醒后端服务（冷启动约 30 秒）...';
+        document.getElementById('loading-text').innerText = '正在连接后端服务...';
         let backendAlive = false;
-        for (let i = 0; i < 45; i++) {
+        for (let i = 0; i < 3; i++) {
           try {
             const res = await fetch(`${API_BASE}/health`);
             if (res.ok) { backendAlive = true; break; }
           } catch (_) {}
-          await new Promise(r => setTimeout(r, 2000));
+          if (i < 2) await new Promise(r => setTimeout(r, 1000));
         }
-        if (!backendAlive) throw new Error('后端服务唤醒超时，请重试。');
+        if (!backendAlive) throw new Error('后端服务连接失败，请重试。');
 
         const buffer = img.toPNG();
         const blob = new Blob([buffer], { type: 'image/png' });
@@ -324,7 +324,7 @@
 
         document.getElementById('loading-text').innerText = '数据已分发至并发池，等待裁判合流...';
         let data;
-        for (let attempt = 0; attempt < 3; attempt++) {
+        for (let attempt = 0; attempt < 2; attempt++) {
           try {
             const response = await fetch(`${API_BASE}/solve`, {
               method: 'POST',
@@ -335,8 +335,8 @@
             data = await response.json();
             break;
           } catch (err) {
-            if (attempt === 2) throw err;
-            await new Promise(r => setTimeout(r, 2000));
+            if (attempt === 1) throw err;
+            await new Promise(r => setTimeout(r, 1000));
           }
         }
 
