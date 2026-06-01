@@ -1,6 +1,11 @@
 {
-  "current": "v1.2.0",
+  "current": "v1.2.1",
   "versions": {
+    "v1.2.1": {
+      "date": "2026-06-01",
+      "note": "修正 LOCAL_UI_VERSION 版本号显示问题",
+      "files": ["index.html", "tailwind.css"]
+    },
     "v1.2.0": {
       "date": "2026-06-01",
       "note": "迁移至阿里云服务器，移除Render冷启动逻辑，简化重试机制",
