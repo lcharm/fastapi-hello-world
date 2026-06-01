@@ -222,10 +222,11 @@ async def judge_answers(comparison_text, survivor_count, request_id=""):
         "   - 不跳步：解答过程要逻辑清晰，步骤严谨，不能出现影响理解的跳步，绝对不能直接使用经验性结论。\n"
         "   - 不超纲：所用知识点与解题方法均在对应学段的教材中学习过，不可使用超纲内容。\n"
         "2. 【思路点拨】部分：根据题干分析问题，帮助学生打开思路，找到解题方法，在思路点拨中明确计算方法、运算规则等。\n\n"
-        "排版清洗强约束：\n"
+        "排版清洗强约束（违背将直接导致前端页面解析崩溃）：\n"
         "1. 必须清除原始文本中所有用于强调的 Markdown 加粗符号（**）。\n"
-        "2. 图文混排时，行内数学公式必须严格使用 $ 包裹（如 $x=2$），独立段落的数学公式必须严格使用 $$ 包裹。\n"
-        "3. 确保输出的纯 LaTeX 语法正确无误，禁止中文标点混入公式内部。"
+        "2. 【致命红线】绝对禁止使用 \\( ... \\) 或 \\[ ... \\] 作为公式定界符！\n"
+        "3. 图文混排时，行内数学公式必须严格使用 $ 包裹（如 $x=2$），独立段落的数学公式必须严格使用 $$ 包裹。\n"
+        "4. 确保输出的纯 LaTeX 语法正确无误，禁止中文标点混入公式内部。"
     )
 
     user_prompt = task_desc + "\n\n" + comparison_text
@@ -306,21 +307,42 @@ async def solve_problem(file: UploadFile = File(...), token: str = Security(veri
     try:
         contents = await file.read()
         base64_image = base64.b64encode(contents).decode('utf-8')
-        prompt_text = """你是一个严谨的教育辅助AI。请识别图片中的题目，如果是选择题，必须逐项分析 A、B、C、D 四个选项的对错原因，绝不允许只解释正确选项。请严格按照以下结构输出，拒绝任何多余的废话和客套：
-
+        # 1. 千问专用提示词：极度压制废话与发散
+        prompt_qwen = """你是一个无情的解题机器。请识别图片中的题目。
+        要求：
+        1. 绝不允许抄写原题。
+        2. 绝不输出任何开场白、废话或解释说明。
+        3. 如果是选择题，逐项简要分析对错。
+        4. 严格按照以下格式直接输出：
         【答案】: (仅输出最终选项或结果)
         【解答】:
-        [思路点拨] (限50字以内，仅概括核心考点)
-        [题目详解] (要求步骤极简，直接列式计算)
+        [思路点拨] (限50字以内概括核心考点)
+        [题目详解] (要求步骤极简，直接列式计算，禁用加粗符号)"""
 
-        格式强约束（违规将导致系统崩溃）：
-        1. 所有数学公式必须使用标准 LaTeX，行内用 $...$，独立公式用 $$...$$。
-        2. 绝对禁止在数学公式内外使用 Markdown 加粗符号（**）。"""
+        # 2. GLM专用提示词：引导内部思考，压制外部输出
+        prompt_glm = """请识别图片中的题目并解答。
+        注意：由于你已开启内部 thinking 模式，请将所有复杂的逻辑推导留在思考区。
+        你的最终文字输出必须极度精简，绝对禁止复述题目内容，避免因输出过多导致截断。
+        必须严格按此结构输出：
+        【答案】: (仅输出结果)
+        【解答】:
+        [思路点拨] (限50字，点明知识点)
+        [题目详解] (步骤极简，禁用加粗符号)"""
 
-        logger.info(f"[{request_id}] 三路并发呼叫开始")
-        task1 = ask_qwen(base64_image, prompt_text, request_id)
-        task2 = ask_glm(base64_image, prompt_text, request_id)
-        task3 = ask_doubao(base64_image, prompt_text, request_id)
+        # 3. 豆包专用提示词：字数强校验，防超时截断
+        prompt_doubao = """请识别图片中的题目并提供解答。
+        为了防止输出被截断，请务必严格控制字数，保持解答步骤极简。绝不要重复题目干信息。
+        如果是选择题，必须简要分析 ABCD 四个选项。
+        严格结构：
+        【答案】:
+        【解答】:
+        [思路点拨] (概括考点)
+        [题目详解] (极简列式计算)"""
+
+        logger.info(f"[{request_id}] 三路并发呼叫开始 (使用独立提示词)")
+        task1 = ask_qwen(base64_image, prompt_qwen, request_id)
+        task2 = ask_glm(base64_image, prompt_glm, request_id)
+        task3 = ask_doubao(base64_image, prompt_doubao, request_id)
         raw_results = await asyncio.gather(task1, task2, task3)
 
         # 去名化映射 + 幸存者检测
