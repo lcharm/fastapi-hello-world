@@ -166,17 +166,10 @@ async def ask_doubao(base64_image, prompt, request_id=""):
                         ),
                     },
                     {
-                        "role": "user",
-                        "content": [
-                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}},
-                            {"type": "text", "text": (
-                                "请识别图片中的题目，并严格按照以下结构输出：\n\n"
-                                "【答案】: (仅输出最终选项或结果)\n"
-                                "【解答】:\n"
-                                "[思路点拨] (限50字以内，仅概括核心考点)\n"
-                                "[题目详解] (要求步骤极简，直接列式计算)\n\n"
-                                "请直接输出，以“【答案】”开头："
-                            )}
+                        “role”: “user”,
+                        “content”: [
+                            {“type”: “image_url”, “image_url”: {“url”: f”data:image/png;base64,{base64_image}”}},
+                            {“type”: “text”, “text”: prompt}
                         ]
                     }
                 ],
@@ -307,7 +300,7 @@ async def solve_problem(file: UploadFile = File(...), token: str = Security(veri
     try:
         contents = await file.read()
         base64_image = base64.b64encode(contents).decode('utf-8')
-        # 1. 千问专用提示词：极度压制废话与发散
+        # 1. 千问提示词：
         prompt_qwen = """你是一个无情的解题机器。请识别图片中的题目。
         要求：
         1. 绝不允许抄写原题。
@@ -319,7 +312,7 @@ async def solve_problem(file: UploadFile = File(...), token: str = Security(veri
         [思路点拨] (限50字以内概括核心考点)
         [题目详解] (要求步骤极简，直接列式计算，禁用加粗符号)"""
 
-        # 2. GLM专用提示词：引导内部思考，压制外部输出
+        # 2. GLM提示词：
         prompt_glm = """请识别图片中的题目并解答。
         注意：由于你已开启内部 thinking 模式，请将所有复杂的逻辑推导留在思考区。
         你的最终文字输出必须极度精简，绝对禁止复述题目内容，避免因输出过多导致截断。
@@ -329,7 +322,7 @@ async def solve_problem(file: UploadFile = File(...), token: str = Security(veri
         [思路点拨] (限50字，点明知识点)
         [题目详解] (步骤极简，禁用加粗符号)"""
 
-        # 3. 豆包专用提示词：字数强校验，防超时截断
+        # 3. 豆包提示词：
         prompt_doubao = """请识别图片中的题目并提供解答。
         为了防止输出被截断，请务必严格控制字数，保持解答步骤极简。绝不要重复题目干信息。
         如果是选择题，必须简要分析 ABCD 四个选项。
