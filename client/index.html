@@ -25,6 +25,26 @@
 </head>
 <body class="bg-gray-50 font-sans m-0 p-4 flex flex-col h-[98vh] overflow-x-hidden select-none">
 
+  <!-- 登录遮罩层 -->
+  <div id="login-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-60 z-50 flex items-center justify-center">
+    <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm">
+      <h2 class="text-xl font-bold text-gray-800 mb-1">登录审题工作台</h2>
+      <p class="text-xs text-gray-400 mb-6">请输入您的账号密码以访问AI服务</p>
+      <div class="mb-4">
+        <label class="block text-xs font-medium text-gray-600 mb-1">用户名</label>
+        <input id="login-username" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="请输入用户名">
+      </div>
+      <div class="mb-6">
+        <label class="block text-xs font-medium text-gray-600 mb-1">密码</label>
+        <input id="login-password" type="password" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="请输入密码" onkeydown="if(event.key==='Enter')document.getElementById('btn-login').click()">
+      </div>
+      <div id="login-error" class="text-red-500 text-xs mb-4 hidden"></div>
+      <button id="btn-login" class="w-full py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-lg shadow-md transition-all duration-200">
+        登 录
+      </button>
+    </div>
+  </div>
+
   <div class="overflow-hidden w-full rounded-lg mb-3">
     <div id="notify-bar" class="inline-block whitespace-nowrap bg-amber-50 border border-amber-300 text-amber-800 text-sm font-medium rounded-lg px-4 py-2">
       🚀 多模态 · 交叉验证 · 一键交付 — 阿里云持续在线，即时响应
@@ -115,6 +135,79 @@
 
     // 本地写死的基准语义化版本号，防止降级被污染
     const LOCAL_UI_VERSION = '1.2.1';
+
+    // ================= JWT 鉴权管理 =================
+    const JWT_STORAGE_KEY = 'ai_solver_jwt';
+
+    function getApiBase() {
+      return window.__API_BASE__ || 'http://120.27.144.30:8000';
+    }
+
+    function getStoredJwt() {
+      try { return localStorage.getItem(JWT_STORAGE_KEY); } catch (_) { return null; }
+    }
+
+    function storeJwt(token) {
+      try { localStorage.setItem(JWT_STORAGE_KEY, token); } catch (_) {}
+    }
+
+    function clearJwt() {
+      try { localStorage.removeItem(JWT_STORAGE_KEY); } catch (_) {}
+    }
+
+    function getAuthHeader() {
+      var jwt = getStoredJwt();
+      if (jwt) return 'Bearer ' + jwt;
+      return 'Bearer ai_boss_2026';
+    }
+
+    // ================= 登录逻辑 =================
+    document.getElementById('btn-login').addEventListener('click', async function () {
+      var username = document.getElementById('login-username').value.trim();
+      var password = document.getElementById('login-password').value;
+      var errEl = document.getElementById('login-error');
+      var btn = document.getElementById('btn-login');
+
+      if (!username || !password) {
+        errEl.innerText = '请填写用户名和密码';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerText = '登录中...';
+      errEl.classList.add('hidden');
+
+      try {
+        var res = await fetch(getApiBase() + '/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ username: username, password: password }).toString()
+        });
+
+        if (!res.ok) {
+          var data = await res.json().catch(function () { return {}; });
+          throw new Error(data.detail || '登录失败');
+        }
+
+        var data = await res.json();
+        storeJwt(data.access_token);
+        document.getElementById('login-overlay').classList.add('hidden');
+      } catch (err) {
+        errEl.innerText = err.message || '登录失败，请检查网络';
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.innerText = '登 录';
+      }
+    });
+
+    // 启动鉴权检查：有 JWT 则隐藏遮罩
+    (function () {
+      if (getStoredJwt()) {
+        document.getElementById('login-overlay').classList.add('hidden');
+      }
+    })();
 
     // ================= 🆕 底部状态栏核心拉取与版本检测逻辑 =================
     (async function() {
@@ -207,7 +300,7 @@
     document.getElementById('btn-retry-update').addEventListener('click', async function() {
       const btnRetry = document.getElementById('btn-retry-update');
       btnRetry.disabled = true;
-      const API_BASE = window.__API_BASE__ || 'http://120.27.144.30:8000';
+      const API_BASE = getApiBase();
 
       btnRetry.innerText = '正在连接服务器...';
       let serverAlive = false;
@@ -294,16 +387,16 @@
       document.getElementById('model2-res').innerText = '多模型并发思考中...';
       document.getElementById('model3-res').innerText = '多模型并发思考中...';
       document.getElementById('final-content').innerText = '等待 deepseek-v4-pro 大模型裁判结果...';
-      
+
       const badge = document.getElementById('status-badge');
       badge.innerText = '裁判中...';
-      badge.style.background = '#ffab00'; 
+      badge.style.background = '#ffab00';
       badge.style.color = '#172b4d';
       document.getElementById('warning-msg').innerText = '';
       document.getElementById('btn-copy-result').style.display = 'none';
       document.getElementById('right-panel').className = "flex-[5] bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl shadow-sm border-2 border-blue-200 flex flex-col";
 
-      const API_BASE = window.__API_BASE__ || 'http://120.27.144.30:8000';
+      const API_BASE = getApiBase();
 
       try {
         document.getElementById('loading-text').innerText = '正在连接后端服务...';
@@ -328,9 +421,14 @@
           try {
             const response = await fetch(`${API_BASE}/solve`, {
               method: 'POST',
-              headers: { 'Authorization': 'Bearer ai_boss_2026' },
+              headers: { 'Authorization': getAuthHeader() },
               body: formData
             });
+            if (response.status === 401) {
+              clearJwt();
+              document.getElementById('login-overlay').classList.remove('hidden');
+              throw new Error('登录已过期或账号被禁用，请重新登录');
+            }
             if (!response.ok) throw new Error(`HTTP 错误: ${response.status}`);
             data = await response.json();
             break;

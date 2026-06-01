@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI, UploadFile, File, Security, HTTPException, Depends
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 import base64
 import asyncio
@@ -14,12 +14,15 @@ import time
 import uuid
 import uvicorn
 
+from auth import init_db, authenticate_user, decode_jwt, is_user_active
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global REQUEST_SEMAPHORE
+    init_db()
     REQUEST_SEMAPHORE = asyncio.Semaphore(3)
     yield
     REQUEST_SEMAPHORE = None
@@ -32,15 +35,43 @@ security = HTTPBearer()
 
 async def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
     token = credentials.credentials
-    valid_token = os.getenv("API_TOKEN", "ai_boss_2026")
 
-    if token != valid_token:
+    # 1) 尝试 JWT 解码
+    username = decode_jwt(token)
+    if username is not None:
+        if not is_user_active(username):
+            raise HTTPException(
+                status_code=401,
+                detail="账号已被禁用",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return username
+
+    # 2) 回退旧版 API_TOKEN 兼容
+    legacy_token = os.getenv("API_TOKEN", "ai_boss_2026")
+    if token == legacy_token:
+        logger.warning("使用了旧版 API_TOKEN 鉴权，请尽快迁移到 JWT")
+        return "legacy_admin"
+
+    # 3) 都不通过
+    raise HTTPException(
+        status_code=401,
+        detail="无效的访问令牌",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+# ================= 登录接口 =================
+
+@app.post("/login")
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    token = authenticate_user(form_data.username, form_data.password)
+    if token is None:
         raise HTTPException(
             status_code=401,
-            detail="无效的访问令牌",
-            headers={"WWW-Authenticate": "Bearer"},
+            detail="用户名或密码错误，或账号已被禁用",
         )
-    return token
+    return {"access_token": token, "token_type": "bearer"}
+
 
 # ================= 1. 动态秘钥池配置 =================
 qwen_keys = os.getenv("QWEN_KEYS", "你的默认千问key").split(",")
