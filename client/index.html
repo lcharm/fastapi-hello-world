@@ -14,6 +14,11 @@
     };
   </script>
   <style>
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .spinner { animation: spin 1s linear infinite; }
     @keyframes fade-out-bar {
       0%   { opacity: 1; max-height: 40px; margin-bottom: 16px; padding-top: 8px; padding-bottom: 8px; }
       100% { opacity: 0; max-height: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
@@ -26,7 +31,7 @@
 <body class="bg-gray-50 font-sans m-0 p-4 flex flex-col h-[98vh] overflow-x-hidden select-none">
 
   <!-- 登录遮罩层 -->
-  <div id="login-overlay" class="flex items-center justify-center" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999; background-color: rgba(243, 244, 246, 0.65); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);">
+  <div id="login-overlay" class="flex items-center justify-center" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999; display: flex; align-items: center; justify-content: center; background-color: rgba(243, 244, 246, 0.65); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);">
     <div class="bg-white w-full relative overflow-hidden" style="max-width: 380px; padding: 40px 32px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.03);">
       
       <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-purple-600"></div>
@@ -51,9 +56,9 @@
 
       <div id="login-error" class="text-red-500 text-xs mb-5 hidden text-center font-medium bg-red-50 py-2.5 rounded-lg border border-red-100"></div>
 
-      <button id="btn-login" class="w-full py-3.5 bg-gray-900 hover:bg-black text-white font-semibold shadow-md transition-all duration-200 flex justify-center items-center gap-2 active:scale-[0.98]" style="border-radius: 14px;">
+        <button id="btn-login" class="w-full py-3.5 hover:bg-black font-semibold shadow-md transition-all duration-200 active:scale-[0.98]" style="border-radius: 14px; background-color: #111827; color: #ffffff; display: flex; justify-content: center; align-items: center;">
         进入系统
-        <svg class="w-4 h-4 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+        <svg class="opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 18px; height: 18px; margin-left: 6px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
       </button>
     </div>
   </div>
@@ -187,7 +192,7 @@
       }
 
       btn.disabled = true;
-      btn.innerText = '登录中...';
+      btn.innerHTML = '验证中... <svg class="spinner" fill="none" viewBox="0 0 24 24" style="width: 18px; height: 18px; margin-left: 6px;"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
       errEl.classList.add('hidden');
 
       try {
@@ -210,7 +215,7 @@
         errEl.classList.remove('hidden');
       } finally {
         btn.disabled = false;
-        btn.innerText = '登 录';
+        btn.innerHTML = '进入系统 <svg class="opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 18px; height: 18px; margin-left: 6px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>';
       }
     });
 
