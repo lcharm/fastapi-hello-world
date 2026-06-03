@@ -19,13 +19,6 @@
       to { transform: rotate(360deg); }
     }
     .spinner { animation: spin 1s linear infinite; }
-    @keyframes fade-out-bar {
-      0%   { opacity: 1; max-height: 40px; margin-bottom: 16px; padding-top: 8px; padding-bottom: 8px; }
-      100% { opacity: 0; max-height: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
-    }
-    #notify-bar.fade-out {
-      animation: fade-out-bar 0.6s ease forwards;
-    }
   </style>
 </head>
 <body class="bg-gray-50 font-sans m-0 p-4 flex flex-col h-[98vh] overflow-x-hidden select-none">
@@ -60,12 +53,6 @@
         进入系统
         <svg class="opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 18px; height: 18px; margin-left: 6px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
       </button>
-    </div>
-  </div>
-
-  <div class="overflow-hidden w-full rounded-lg mb-3">
-    <div id="notify-bar" class="inline-block whitespace-nowrap bg-amber-50 border border-amber-300 text-amber-800 text-sm font-medium rounded-lg px-4 py-2">
-      🚀 多模态 · 交叉验证 · 一键交付 — 阿里云持续在线，即时响应
     </div>
   </div>
 
@@ -142,6 +129,11 @@
     </div>
     <div class="flex items-center gap-3">
       <span id="update-status-msg" class="text-gray-400 text-[11px]"></span>
+
+      <button onclick="require('electron').ipcRenderer.send('open-history-window')" class="px-2.5 py-1 bg-white hover:bg-gray-50 text-gray-700 font-bold rounded-md border border-gray-200 transition-all duration-150 active:scale-95 shadow-sm">
+        🕒 历史记录
+      </button>
+
       <button id="btn-check-update" class="px-2.5 py-1 bg-gray-50 hover:bg-gray-100 text-gray-600 font-medium rounded-md border border-gray-200 transition-all duration-150 active:scale-95 shadow-2xs">
         🔄 检查更新
       </button>
@@ -209,7 +201,7 @@
 
         var data = await res.json();
         storeJwt(data.access_token);
-        document.getElementById('login-overlay').classList.add('hidden');
+        document.getElementById('login-overlay').style.display = 'none';
       } catch (err) {
         errEl.innerText = err.message || '登录失败，请检查网络';
         errEl.classList.remove('hidden');
@@ -219,11 +211,9 @@
       }
     });
 
-    // 启动鉴权检查：有 JWT 则隐藏遮罩
+    // 每次启动强制重新登录，防止 token 泄露后被盗刷
     (function () {
-      if (getStoredJwt()) {
-        document.getElementById('login-overlay').classList.add('hidden');
-      }
+      clearJwt();
     })();
 
     // ================= 🆕 底部状态栏核心拉取与版本检测逻辑 =================
@@ -347,35 +337,6 @@
       }
     });
 
-    // ================= 启动时：顶部滚动通知栏自动消失 =================
-    (function() {
-      const bar = document.getElementById('notify-bar');
-      if (!bar) return;
-      const wrapper = bar.parentElement;
-
-      const run = function() {
-        const wrapperWidth = wrapper.offsetWidth;
-        const textWidth = bar.scrollWidth;
-        bar.animate([
-          { transform: `translateX(${wrapperWidth}px)` },
-          { transform: `translateX(-${textWidth}px)` }
-        ], {
-          duration: 10800,
-          iterations: 2,
-          easing: 'linear'
-        }).onfinish = function() {
-          bar.classList.add('fade-out');
-        };
-      };
-
-      requestAnimationFrame(function() {
-        requestAnimationFrame(run);
-      });
-      setTimeout(function() {
-        if (!bar.classList.contains('fade-out')) bar.classList.add('fade-out');
-      }, 30000);
-    })();
-
     let currentRawText = "";
 
     // ================= 核心业务：监听“粘贴并识别”按钮 =================
@@ -383,7 +344,7 @@
       // ==== 在这里增加前置拦截逻辑 ====
       if (!getStoredJwt()) {
         alert('未检测到登录凭证，请先登录！');
-        document.getElementById('login-overlay').classList.remove('hidden');
+        document.getElementById('login-overlay').style.display = 'flex';
         return;
       }
 
@@ -450,7 +411,7 @@
             });
             if (response.status === 401) {
               clearJwt();
-              document.getElementById('login-overlay').classList.remove('hidden');
+              document.getElementById('login-overlay').style.display = 'flex';
               throw new Error('登录已过期或账号被禁用，请重新登录');
             }
             if (!response.ok) throw new Error(`HTTP 错误: ${response.status}`);
@@ -512,6 +473,17 @@
             document.getElementById('model3-res')
           ]).catch((err) => console.log('渲染延迟: ', err));
         }
+
+        ipcRenderer.send('save-history-record', {
+          imgData: previewImg.src,
+          text: currentRawText,
+          consistent: finalResult.is_consistent,
+          raw_data: {
+            qwen: raw['模型 1'],
+            glm: raw['模型 2'],
+            doubao: raw['模型 3']
+          }
+        });
 
       } catch (error) {
         document.getElementById('final-content').innerText = '请求异常：' + error.message;

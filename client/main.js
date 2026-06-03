@@ -16,6 +16,14 @@ try {
 if (process.env.UPDATE_SERVER) UPDATE_SERVER = process.env.UPDATE_SERVER
 const CACHE_DIR = path.join(app.getPath('userData'), 'app-cache')
 
+// ================= 本地数据持久化基建 =================
+const HISTORY_DIR = path.join(app.getPath('userData'), 'AI_Solver_History')
+const IMG_DIR = path.join(HISTORY_DIR, 'images')
+const DB_FILE = path.join(HISTORY_DIR, 'history.jsonl')
+if (!fs.existsSync(IMG_DIR)) {
+  fs.mkdirSync(IMG_DIR, { recursive: true })
+}
+
 // 获取缓存中最新的版本号（作为更新失败时的回退显示）
 function getLatestCachedVersion() {
   try {
@@ -227,6 +235,81 @@ ipcMain.handle('get-version-info', () => ({
     ...currentUpdateInfo,
     apiBase: UPDATE_SERVER
   }))
+
+// ================= 新增：历史记录窗口控制 =================
+let historyWindow = null;
+
+ipcMain.on('open-history-window', () => {
+  if (historyWindow) {
+    historyWindow.focus(); // 如果已经打开，直接置顶
+    return;
+  }
+
+  historyWindow = new BrowserWindow({
+    width: 900,
+    height: 700,
+    title: '历史解析记录',
+    backgroundColor: '#f3f4f6',
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+
+  // 隐藏默认的顶部菜单栏
+  historyWindow.setMenu(null);
+  historyWindow.loadFile(path.join(__dirname, 'history.html'));
+
+  historyWindow.on('closed', () => {
+    historyWindow = null;
+  });
+});
+
+// 1. 接收前端的数据并落盘 (追加写入)
+ipcMain.on('save-history-record', (event, data) => {
+  try {
+    const timestamp = Date.now()
+    const dateStr = new Date().toLocaleString('zh-CN', { hour12: false })
+
+    const base64Data = data.imgData.replace(/^data:image\/\w+;base64,/, '')
+    const imgBuffer = Buffer.from(base64Data, 'base64')
+    const imgFileName = `img_${timestamp}.png`
+    const imgFilePath = path.join(IMG_DIR, imgFileName)
+    fs.writeFileSync(imgFilePath, imgBuffer)
+
+    const record = {
+      id: timestamp,
+      time: dateStr,
+      consistent: data.consistent,
+      imgData: `file://${imgFilePath.replace(/\\/g, '/')}`,
+      text: data.text,
+      raw_data: data.raw_data
+    }
+
+    fs.appendFileSync(DB_FILE, JSON.stringify(record) + '\n', 'utf-8')
+  } catch (error) {
+    console.error('历史记录落盘失败:', error)
+  }
+})
+
+// 2. 提供给历史界面的真实读取接口
+ipcMain.handle('get-history-data', async () => {
+  try {
+    if (!fs.existsSync(DB_FILE)) return []
+
+    const fileContent = fs.readFileSync(DB_FILE, 'utf-8')
+    const records = fileContent
+      .split('\n')
+      .filter(line => line.trim() !== '')
+      .map(line => JSON.parse(line))
+      .reverse()
+
+    return records
+  } catch (error) {
+    console.error('读取历史记录失败:', error)
+    return []
+  }
+})
 
 ipcMain.handle('retry-update', async () => {
   // 前台触发的重试下载：直接拉到最新版覆盖缓存
