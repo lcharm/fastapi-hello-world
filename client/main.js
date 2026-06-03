@@ -260,6 +260,13 @@ ipcMain.on('open-history-window', () => {
   historyWindow.setMenu(null);
   historyWindow.loadFile(path.join(__dirname, 'history.html'));
 
+  historyWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12') {
+      historyWindow.webContents.toggleDevTools()
+      event.preventDefault()
+    }
+  })
+
   historyWindow.on('closed', () => {
     historyWindow = null;
   });

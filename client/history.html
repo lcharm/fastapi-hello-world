@@ -133,8 +133,8 @@
       });
 
       container.innerHTML = html;
-      if (window.MathJax) {
-        MathJax.typesetPromise([container]).catch(err => console.log('MathJax Error:', err));
+      if (window.MathJax && typeof MathJax.typesetPromise === 'function') {
+        try { MathJax.typesetPromise([container]).catch(function(){}); } catch(_) {}
       }
     }
 
