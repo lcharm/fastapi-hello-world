@@ -259,17 +259,17 @@ async def judge_answers(comparison_text, survivor_count, request_id=""):
     system_prompt = (
         "你是数据比对与清洗引擎。你无法看到原图，仅负责多路文本一致性比对与排版清洗。\n"
         "必须严格输出纯 JSON（以 { 起，以 } 止，禁用 ```json 包裹）。\n\n"
-        "JSON 结构：\n"
-        "{\n"
-        '  "is_consistent": ' + consistency_default + ',\n'
-        '  "final_answer": "最终核心结果，选择题限单字母如 B，解答题限纯公式如 x=2，禁止附带任何说明文字。",\n'
-        '  "final_explanation": "【思路点拨】\\nXXXX\\n\\n【题目解析】\\nXXXX",\n'
-        '  "warning": "' + warning_value + '"\n'
-        "}\n\n"
+        "JSON 字段填写规范：\n"
+        '  - is_consistent: ' + consistency_default + '\n'
+        '  - final_answer: 仅提取最终核心结果。选择题限单字母(如 B)，解答题限纯公式(如 x=2)。绝对禁止附带"故选"或任何说明文字。\n'
+        '  - final_explanation: 【必须包含完整的解题过程】。从原始模型输出中提取并整合，按"【思路点拨】\\n...\\n\\n【题目解析】\\n..."格式填入。此字段绝对不能为空或仅含标题！\n'
+        '  - warning: ' + warning_value + '\n'
+        "\n"
         "业务规范：\n"
-        "1. final_answer 中绝对禁止出现大段推导，该内容必须全量放入【题目解析】节点。\n"
+        "1. final_answer 仅放结论，所有推导过程必须全量放入 final_explanation 的【题目解析】段落。\n"
         "2. 排版红线：清除所有 ** 加粗；公式定界符强制使用 $...$ 和 $$...$$，严禁 \\(...\\) 或 \\[...\\]。\n"
-        "3. 中文标点不得混入 LaTeX 公式内部。"
+        "3. 中文标点不得混入 LaTeX 公式内部。\n"
+        "4. 【致命红线】final_explanation 禁止输出空字符串或仅含标题行，违者整题作废。"
     )
 
     user_prompt = task_desc + "\n\n" + comparison_text
@@ -299,7 +299,7 @@ async def judge_answers(comparison_text, survivor_count, request_id=""):
                     ],
                     temperature=current_temp,
                     max_tokens=8192,
-                    extra_body={"thinking": {"type": "enabled", "budget_tokens": 4096}}
+                    extra_body={"thinking": {"type": "enabled", "budget_tokens": 2048}}
                 ),
                 timeout=300
             )
