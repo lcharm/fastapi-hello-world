@@ -1,6 +1,11 @@
 {
-  "current": "v1.3.0",
+  "current": "v1.3.1",
   "versions": {
+    "v1.3.1": {
+      "date": "2026-06-05",
+      "note": "多图暂存上下拼合（居中）、裁剪删除优化、裁判 final_explanation 空值修复、豆包模型名修正",
+      "files": ["index.html", "tailwind.css"]
+    },
     "v1.3.0": {
       "date": "2026-06-01",
       "note": "JWT 鉴权系统上线：登录遮罩、账号分发、封堵旧 token 后门、CSS 原生霸屏修复",
