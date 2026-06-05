@@ -1,0 +1,615 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>AI 多模态智能审题工作台</title>
+  <link rel="stylesheet" href="tailwind.css">
+  <script id="MathJax-script" async src="https://cdn.bootcdn.net/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.min.js"></script>
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      }
+    };
+  </script>
+  <style>
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .spinner { animation: spin 1s linear infinite; }
+  </style>
+</head>
+<body class="bg-gray-50 font-sans m-0 p-4 flex flex-col h-[98vh] overflow-x-hidden select-none">
+
+  <!-- 登录遮罩层 -->
+  <div id="login-overlay" class="flex items-center justify-center" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999; display: flex; align-items: center; justify-content: center; background-color: rgba(243, 244, 246, 0.65); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);">
+    <div class="bg-white w-full relative overflow-hidden" style="max-width: 380px; padding: 40px 32px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.03);">
+      
+      <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-purple-600"></div>
+
+      <div class="text-center mb-8 mt-2">
+        <div class="mx-auto flex items-center justify-center mb-4" style="width: 56px; height: 56px; border-radius: 16px; background: linear-gradient(135deg, #eff6ff, #f3e8ff); border: 1px solid rgba(255,255,255,0.6); box-shadow: inset 0 2px 4px rgba(255,255,255,0.8), 0 4px 10px rgba(0,0,0,0.03);">
+          <span class="text-2xl">✨</span>
+        </div>
+        <h2 class="text-2xl font-bold text-gray-800 tracking-tight mb-1.5">AI 审题工作台</h2>
+        <p class="text-sm text-gray-400">请输入您的内部授权账号</p>
+      </div>
+
+      <div class="mb-5">
+        <label class="block text-xs font-bold text-gray-500 mb-2 tracking-wider uppercase">用户名</label>
+        <input id="login-username" type="text" class="w-full bg-gray-50 border border-gray-200 text-gray-800 px-4 py-3 text-sm transition-all duration-200" style="border-radius: 12px; outline: none;" onfocus="this.style.borderColor='#3b82f6'; this.style.backgroundColor='#fff'; this.style.boxShadow='0 0 0 4px rgba(59, 130, 246, 0.1)'" onblur="this.style.borderColor='#e5e7eb'; this.style.backgroundColor='#f9fafb'; this.style.boxShadow='none'" placeholder="Username">
+      </div>
+
+      <div class="mb-8">
+        <label class="block text-xs font-bold text-gray-500 mb-2 tracking-wider uppercase">密码</label>
+        <input id="login-password" type="password" class="w-full bg-gray-50 border border-gray-200 text-gray-800 px-4 py-3 text-sm transition-all duration-200" style="border-radius: 12px; outline: none;" onfocus="this.style.borderColor='#3b82f6'; this.style.backgroundColor='#fff'; this.style.boxShadow='0 0 0 4px rgba(59, 130, 246, 0.1)'" onblur="this.style.borderColor='#e5e7eb'; this.style.backgroundColor='#f9fafb'; this.style.boxShadow='none'" placeholder="••••••••" onkeydown="if(event.key==='Enter')document.getElementById('btn-login').click()">
+      </div>
+
+      <div id="login-error" class="text-red-500 text-xs mb-5 hidden text-center font-medium bg-red-50 py-2.5 rounded-lg border border-red-100"></div>
+
+        <button id="btn-login" class="w-full py-3.5 hover:bg-black font-semibold shadow-md transition-all duration-200 active:scale-[0.98]" style="border-radius: 14px; background-color: #111827; color: #ffffff; display: flex; justify-content: center; align-items: center;">
+        进入系统
+        <svg class="opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 18px; height: 18px; margin-left: 6px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="flex flex-col bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-3 gap-3 transition-all">
+    <div class="flex items-center gap-3">
+      <button id="btn-add-img" class="px-4 py-2.5 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 font-semibold rounded-lg shadow-sm transition-all active:scale-95 flex items-center gap-2 text-sm">
+        📥 贴入剪贴板 (可多次截图)
+      </button>
+      <button id="btn-submit" disabled class="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-2">
+        🚀 合并并开始审题
+      </button>
+      <button id="btn-clear" class="px-3 py-2 text-gray-400 hover:text-red-500 text-sm transition-colors hidden">
+        🗑️ 清空暂存区
+      </button>
+      <span id="loading-text" class="text-amber-500 font-bold hidden text-sm ml-2">正在合并图片并并发呼叫模型...</span>
+    </div>
+
+    <div id="staging-area" class="hidden w-full overflow-x-auto pb-2 flex gap-3 items-center min-h-[100px] border-t border-gray-100 pt-3">
+      </div>
+  </div>
+
+  <div id="update-fail-bar" class="hidden bg-amber-50 border border-amber-300 text-amber-800 text-sm rounded-lg px-4 py-2.5 mb-3 flex items-center justify-between shadow-sm">
+    <div class="flex items-center gap-2">
+      <span>🔔 发现新版本或当前处于离线核心，建议立即同步最新平台规则以保证公式排版精度。</span>
+    </div>
+    <button id="btn-retry-update" class="px-4 py-1 text-xs font-bold rounded-md shadow-sm flex-shrink-0"
+      style="background:#d97706; color:#fff; border:none; cursor:pointer; white-space:nowrap;"
+      onmouseover="this.style.background='#b45309'" onmouseout="this.style.background='#d97706'">立即同步</button>
+  </div>
+
+  <div class="flex gap-4 flex-1 overflow-hidden mb-3">
+
+    <div class="flex-[4] bg-white p-4 rounded-xl shadow-sm border border-gray-100 overflow-y-auto">
+      <h3 class="text-base font-semibold text-gray-800 mb-3 flex items-center gap-2">
+        <span class="w-1 h-4 bg-gray-400 rounded-full"></span>多模型原始输出参考
+      </h3>
+      
+      <div class="border border-gray-200 rounded-xl p-3.5 mb-3 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
+        <div class="font-semibold text-gray-400 mb-1.5 text-xs tracking-wide">千问 (qwen3.5-plus) 输出</div>
+        <div class="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-mono" id="model1-res">等待识别...</div>
+      </div>
+      
+      <div class="border border-gray-200 rounded-xl p-3.5 mb-3 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
+        <div class="font-semibold text-gray-400 mb-1.5 text-xs tracking-wide">GLM (GLM-4.6V) 输出</div>
+        <div class="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-mono" id="model2-res">等待识别...</div>
+      </div>
+      
+      <div class="border border-gray-200 rounded-xl p-3.5 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
+        <div class="font-semibold text-gray-400 mb-1.5 text-xs tracking-wide">豆包 (Doubao-Seed-2.0-lite) 输出</div>
+        <div class="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-mono" id="model3-res">等待识别...</div>
+      </div>
+    </div>
+
+    <div class="flex-[5] bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl shadow-sm border-2 border-blue-200 flex flex-col" id="right-panel">
+      <div class="flex justify-between items-center mb-2">
+        <h3 class="text-base font-semibold text-gray-800 m-0 flex items-center gap-2">
+          <span class="w-1 h-4 bg-blue-600 rounded-full"></span>Deepseek-V4-Pro 终审整合结果
+        </h3>
+        <button id="btn-copy-result" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow-md transition-all duration-200 hidden">
+          📋 一键复制标准代码
+        </button>
+      </div>
+
+      <div id="status-badge" class="inline-block self-start px-2.5 py-1 rounded-full font-bold text-xs mb-3 bg-gray-200 text-gray-600 tracking-wide">
+        等待验证
+      </div>
+      <div class="text-red-600 font-bold text-xs mb-2" id="warning-msg"></div>
+      <div id="final-content" class="flex-1 border border-gray-200 rounded-lg p-3.5 bg-white overflow-y-auto whitespace-pre-wrap text-xs text-gray-700 leading-relaxed font-mono">
+        结果将在这里显示...
+      </div>
+    </div>
+
+  </div>
+
+  <div class="bg-white border border-gray-200 rounded-xl px-4 py-2 flex justify-between items-center text-xs text-gray-500 shadow-sm">
+    <div class="flex items-center gap-4">
+      <div class="flex items-center gap-1.5">
+        <span id="ver-dot" class="w-2 h-2 rounded-full bg-gray-300"></span>
+        <span class="text-gray-600">工作台版本: <strong id="ver-badge" class="text-gray-900 font-bold">1.1.0</strong></span>
+      </div>
+      <span class="text-gray-300">|</span>
+      <div class="flex items-center gap-1">
+        <span>当前引擎状态:</span>
+        <span id="status-text" class="text-gray-700 font-medium bg-gray-100 px-1.5 py-0.5 rounded">闲置</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="update-status-msg" class="text-gray-400 text-[11px]"></span>
+
+      <button onclick="require('electron').ipcRenderer.send('open-history-window')" class="px-2.5 py-1 bg-white hover:bg-gray-50 text-gray-700 font-bold rounded-md border border-gray-200 transition-all duration-150 active:scale-95 shadow-sm">
+        🕒 历史记录
+      </button>
+
+      <button id="btn-check-update" class="px-2.5 py-1 bg-gray-50 hover:bg-gray-100 text-gray-600 font-medium rounded-md border border-gray-200 transition-all duration-150 active:scale-95 shadow-2xs">
+        🔄 检查更新
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const { clipboard, ipcRenderer } = require('electron');
+
+    // 本地写死的基准语义化版本号，防止降级被污染
+    const LOCAL_UI_VERSION = '1.3.0';
+
+    // ================= JWT 鉴权管理 =================
+    const JWT_STORAGE_KEY = 'ai_solver_jwt';
+
+    function getApiBase() {
+      return window.__API_BASE__ || 'http://120.27.144.30:8000';
+    }
+
+    function getStoredJwt() {
+      try { return localStorage.getItem(JWT_STORAGE_KEY); } catch (_) { return null; }
+    }
+
+    function storeJwt(token) {
+      try { localStorage.setItem(JWT_STORAGE_KEY, token); } catch (_) {}
+    }
+
+    function clearJwt() {
+      try { localStorage.removeItem(JWT_STORAGE_KEY); } catch (_) {}
+    }
+
+    function getAuthHeader() {
+      var jwt = getStoredJwt();
+      return 'Bearer ' + (jwt ? jwt : ''); // 没有就发空的，绝不主动送钥匙
+    }
+
+    // ================= 登录逻辑 =================
+    document.getElementById('btn-login').addEventListener('click', async function () {
+      var username = document.getElementById('login-username').value.trim();
+      var password = document.getElementById('login-password').value;
+      var errEl = document.getElementById('login-error');
+      var btn = document.getElementById('btn-login');
+
+      if (!username || !password) {
+        errEl.innerText = '请填写用户名和密码';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '验证中... <svg class="spinner" fill="none" viewBox="0 0 24 24" style="width: 18px; height: 18px; margin-left: 6px;"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>';
+      errEl.classList.add('hidden');
+
+      try {
+        var res = await fetch(getApiBase() + '/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ username: username, password: password }).toString()
+        });
+
+        if (!res.ok) {
+          var data = await res.json().catch(function () { return {}; });
+          throw new Error(data.detail || '登录失败');
+        }
+
+        var data = await res.json();
+        storeJwt(data.access_token);
+        document.getElementById('login-overlay').style.display = 'none';
+      } catch (err) {
+        errEl.innerText = err.message || '登录失败，请检查网络';
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '进入系统 <svg class="opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 18px; height: 18px; margin-left: 6px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>';
+      }
+    });
+
+    // 每次启动强制重新登录，防止 token 泄露后被盗刷
+    (function () {
+      clearJwt();
+    })();
+
+    // ================= 🆕 底部状态栏核心拉取与版本检测逻辑 =================
+    (async function() {
+      const verBadge = document.getElementById('ver-badge');
+      const verDot = document.getElementById('ver-dot');
+      const updateFailBar = document.getElementById('update-fail-bar');
+      const btnCheckUpdate = document.getElementById('btn-check-update');
+      const updateStatusMsg = document.getElementById('update-status-msg');
+
+      verBadge.innerText = LOCAL_UI_VERSION;
+
+      let globalInfo = null;
+
+      // 核心封装：语义化版本比对（如 1.1.0 与 1.1.1）
+      function hasNewVersion(remoteStr, localStr) {
+        if (!remoteStr || !localStr) return false;
+        const r = remoteStr.replace('v', '').split('.').map(Number);
+        const l = localStr.replace('v', '').split('.').map(Number);
+        const maxLen = Math.max(r.length, l.length);
+        for (let i = 0; i < maxLen; i++) {
+          const numR = r[i] || 0;
+          const numL = l[i] || 0;
+          if (numR > numL) return true;
+          if (numR < numL) return false;
+        }
+        return false;
+      }
+
+      async function syncVersionStatus() {
+        try {
+          // 1.5秒超时防悬空 race
+          const info = await Promise.race([
+            ipcRenderer.invoke('get-version-info'),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500))
+          ]);
+          
+          globalInfo = info;
+          window.__API_BASE__ = info.apiBase;
+
+          if (info.updateFailed) {
+            verDot.className = 'w-2 h-2 rounded-full bg-amber-400';
+            verBadge.title = '当前网络不稳定，运行于缓存沙箱模式';
+            updateStatusMsg.innerText = '未连接到云更新服务器';
+          } else {
+            // 核对云端版本与本地 1.1.0 的差距
+            const remoteVer = info.version || LOCAL_UI_VERSION;
+            if (hasNewVersion(remoteVer, LOCAL_UI_VERSION)) {
+              verDot.className = 'w-2 h-2 rounded-full bg-blue-500 animate-pulse';
+              updateFailBar.classList.remove('hidden');
+              updateStatusMsg.innerHTML = `<span class="text-blue-600 font-medium">发现新版本 ${remoteVer}</span>`;
+            } else {
+              verDot.className = 'w-2 h-2 rounded-full bg-green-500';
+              updateStatusMsg.innerText = '已同步至最新云规则';
+            }
+          }
+        } catch (error) {
+          verDot.className = 'w-2 h-2 rounded-full bg-gray-400';
+          verBadge.title = '主进程通信超时或处于纯净本地模式';
+          updateStatusMsg.innerText = '断网/纯净本地模式';
+        }
+      }
+
+      // 初始化执行一次
+      await syncVersionStatus();
+
+      // "检查更新"按钮主动交互
+      btnCheckUpdate.addEventListener('click', async () => {
+        btnCheckUpdate.disabled = true;
+        btnCheckUpdate.innerText = '正在检索...';
+        updateStatusMsg.innerText = '正在向云端对齐版本清单...';
+
+        // 先让主进程重新拉取服务端 version.json，再刷新 UI
+        try {
+          await ipcRenderer.invoke('check-version-update');
+        } catch (_) {}
+        await syncVersionStatus();
+
+        btnCheckUpdate.disabled = false;
+        btnCheckUpdate.innerText = '🔄 检查更新';
+
+        if (globalInfo && globalInfo.version) {
+          if (hasNewVersion(globalInfo.version, LOCAL_UI_VERSION)) {
+            alert(`检查完成！发现云端更高版本 [ ${globalInfo.version} ]。\n\n系统已为您自动激活上方的"立即同步"横幅，点击即可一键无感热更新。`);
+          } else {
+            alert(`检查完成！当前工作台已是最新版本 (${LOCAL_UI_VERSION})。\n\n无需任何操作，请放心审题。`);
+          }
+        } else {
+          alert('未能获取到云端版本清单，请检查您的网络连接或稍后重试。');
+        }
+      });
+    })();
+
+    // ================= 动作：同步更新下载按钮 =================
+    // 兜底：如果按钮没渲染出来，点击横幅也能触发
+    document.getElementById('update-fail-bar').addEventListener('click', function(e) {
+      if (e.target.id === 'btn-retry-update') return; // 按钮自己处理
+      document.getElementById('btn-retry-update').click();
+    });
+    document.getElementById('btn-retry-update').addEventListener('click', async function() {
+      const btnRetry = document.getElementById('btn-retry-update');
+      btnRetry.disabled = true;
+      const API_BASE = getApiBase();
+
+      btnRetry.innerText = '正在连接服务器...';
+      let serverAlive = false;
+      for (let i = 0; i < 3; i++) {
+        try {
+          const res = await fetch(`${API_BASE}/health`);
+          if (res.ok) { serverAlive = true; break; }
+        } catch (_) {}
+        if (i < 2) await new Promise(r => setTimeout(r, 1000));
+      }
+      if (!serverAlive) {
+        btnRetry.disabled = false;
+        btnRetry.innerText = '立即同步';
+        alert('服务器连接失败，请确认网络正常后重试。');
+        return;
+      }
+
+      btnRetry.innerText = '正在无感热更...';
+      const result = await ipcRenderer.invoke('retry-update');
+      if (result.ok) {
+        document.getElementById('update-fail-bar').classList.add('hidden');
+        alert('同步成功！全新生产要素已载入缓存。请重新启动软件以启用 [' + result.version + '] 版本。');
+      } else {
+        btnRetry.disabled = false;
+        btnRetry.innerText = '立即同步';
+        alert('下载失败：' + (result.error || '未知错误'));
+      }
+    });
+
+    let currentRawText = "";
+
+    // ================= 核心业务：多图暂存与 Canvas 无缝拼接 =================
+    let stagedImages = []; // 用于存放内存中的原生图片数据
+
+    const btnAddImg = document.getElementById('btn-add-img');
+    const btnSubmit = document.getElementById('btn-submit');
+    const btnClear = document.getElementById('btn-clear');
+    const stagingArea = document.getElementById('staging-area');
+    const statusText = document.getElementById('status-text');
+
+    // 渲染暂存区 UI
+    function renderStagingArea() {
+      if (stagedImages.length === 0) {
+        stagingArea.classList.add('hidden');
+        btnClear.classList.add('hidden');
+        btnSubmit.disabled = true;
+        stagingArea.innerHTML = '';
+        btnSubmit.innerText = '🚀 合并并开始审题';
+        return;
+      }
+
+      stagingArea.classList.remove('hidden');
+      btnClear.classList.remove('hidden');
+      btnSubmit.disabled = false;
+      btnSubmit.innerText = `🚀 拼接 ${stagedImages.length} 张图并审题`;
+
+      // 动态生成带有删除按钮的缩略图
+      stagingArea.innerHTML = stagedImages.map((imgUrl, index) => `
+        <div class="shrink-0 flex items-start gap-1">
+          <img src="${imgUrl}" class="h-24 border border-gray-300 rounded shadow-sm object-contain bg-gray-50" />
+          <button onclick="removeImage(${index})"
+            style="width: 20px; height: 20px; border-radius: 50%; background: #ef4444; color: #fff; border: none; font-size: 11px; line-height: 1; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.15); flex-shrink: 0;"
+            onmouseover="this.style.background='#dc2626'"
+            onmouseout="this.style.background='#ef4444'"
+            title="移除此图片">✕</button>
+        </div>
+      `).join('');
+    }
+
+    // 全局暴露给 HTML 删除按钮用的函数
+    window.removeImage = function(index) {
+      stagedImages.splice(index, 1);
+      renderStagingArea();
+    };
+
+    btnClear.addEventListener('click', () => {
+      stagedImages = [];
+      renderStagingArea();
+    });
+
+    // 动作 1：将剪贴板图片贴入暂存区
+    btnAddImg.addEventListener('click', () => {
+      const img = clipboard.readImage();
+      if (img.isEmpty()) {
+        alert('剪贴板中没有发现图片，请先截图！');
+        return;
+      }
+      // 将 Electron 的 NativeImage 转为 DataURL 存入数组
+      stagedImages.push(img.toDataURL());
+      renderStagingArea();
+    });
+
+    // 附带福利：支持键盘全局 Ctrl+V 直接贴图
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        if (document.getElementById('login-overlay').style.display !== 'none') return;
+        btnAddImg.click();
+      }
+    });
+
+    // 动作 2：合并图片并提交给后端
+    btnSubmit.addEventListener('click', async () => {
+      if (stagedImages.length === 0) return;
+
+      btnAddImg.disabled = true;
+      btnSubmit.disabled = true;
+      btnClear.classList.add('hidden');
+      document.getElementById('loading-text').style.display = 'inline';
+
+      statusText.innerText = '⏳ 正在合成长图...';
+      statusText.className = 'text-amber-700 font-medium bg-amber-50 px-1.5 py-0.5 rounded animate-pulse';
+
+      // 界面重置提示
+      document.getElementById('model1-res').innerText = '多模型并发思考中...';
+      document.getElementById('model2-res').innerText = '多模型并发思考中...';
+      document.getElementById('model3-res').innerText = '多模型并发思考中...';
+      document.getElementById('final-content').innerText = '等待 deepseek-v4-pro 大模型裁判结果...';
+
+      const badge = document.getElementById('status-badge');
+      badge.innerText = '裁判中...';
+      badge.style.background = '#ffab00';
+      badge.style.color = '#172b4d';
+      document.getElementById('warning-msg').innerText = '';
+      document.getElementById('btn-copy-result').style.display = 'none';
+
+      try {
+        // --- 核心：Canvas 垂直拼图逻辑 ---
+        const imgElements = await Promise.all(stagedImages.map(dataUrl => {
+          return new Promise(resolve => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.src = dataUrl;
+          });
+        }));
+
+        // 计算拼图后的总高度和最大宽度
+        const totalHeight = imgElements.reduce((sum, img) => sum + img.height, 0);
+        const maxWidth = Math.max(...imgElements.map(img => img.width));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = maxWidth;
+        canvas.height = totalHeight;
+        const ctx = canvas.getContext('2d');
+
+        // 填充白色背景（防止 PNG 透明底变黑）
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        let currentY = 0;
+        imgElements.forEach(img => {
+          // 垂直居中拼合：窄图居中后再向下平铺
+          const xOffset = (maxWidth - img.width) / 2;
+          ctx.drawImage(img, xOffset, currentY);
+          currentY += img.height;
+        });
+
+        // 转换为发送给后端的 Blob 和用于历史记录的 DataURL
+        const mergedDataUrl = canvas.toDataURL('image/png');
+        const finalBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        // ----------------------------------
+
+        statusText.innerText = '⏳ 并发呼叫多模态模型...';
+        const API_BASE = getApiBase();
+        const formData = new FormData();
+        formData.append('file', finalBlob, 'merged_clipboard.png');
+
+        let data;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const response = await fetch(`${API_BASE}/solve`, {
+              method: 'POST',
+              headers: { 'Authorization': getAuthHeader() },
+              body: formData
+            });
+            if (response.status === 401) {
+              clearJwt();
+              document.getElementById('login-overlay').style.display = 'flex';
+              throw new Error('登录已过期，请重新登录');
+            }
+            if (!response.ok) throw new Error(`HTTP 错误: ${response.status}`);
+            data = await response.json();
+            break;
+          } catch (err) {
+            if (attempt === 1) throw err;
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        }
+
+        if (data.status === 'error') throw new Error(data.message);
+
+        // 渲染原始模型结果
+        const raw = data.raw_data;
+        document.getElementById('model1-res').innerText = raw["模型 1"] || '无返回';
+        document.getElementById('model2-res').innerText = raw["模型 2"] || '无返回';
+        document.getElementById('model3-res').innerText = raw["模型 3"] || '无返回';
+
+        // 处理最终裁决结果
+        const finalResult = data.final_result;
+        badge.style.background = '';
+        badge.style.color = '';
+
+        if (data.survivor_count === 1) {
+          badge.innerText = '❌ 孤证预警';
+          badge.className = "inline-block self-start px-2.5 py-1 rounded-full font-bold text-xs mb-3 bg-red-600 text-white animate-pulse";
+          document.getElementById('warning-msg').innerText = '⚠️ 警告：单模型输出无法进行交叉验证，请老师人工核对！';
+        } else {
+          badge.innerText = finalResult.is_consistent ? '✅ 意见一致' : '⚠️ 存在分歧';
+          badge.style.background = finalResult.is_consistent ? '#e3fcef' : '#ffebe6';
+          badge.style.color = finalResult.is_consistent ? '#006644' : '#bf2600';
+          badge.className = "inline-block self-start px-2.5 py-1 rounded-full font-bold text-xs mb-3";
+          document.getElementById('warning-msg').innerText = finalResult.warning || '';
+        }
+
+        currentRawText = `答案\n${finalResult.final_answer}\n解答\n${finalResult.final_explanation}`;
+        document.getElementById('final-content').innerText = currentRawText;
+        document.getElementById('btn-copy-result').style.display = 'inline-block';
+
+        statusText.innerText = '闲置';
+        statusText.className = 'text-gray-700 font-medium bg-gray-100 px-1.5 py-0.5 rounded';
+
+        if (window.MathJax && typeof window.MathJax.typesetPromise === 'function') {
+          MathJax.typesetPromise([
+            document.getElementById('final-content'),
+            document.getElementById('model1-res'),
+            document.getElementById('model2-res'),
+            document.getElementById('model3-res')
+          ]).catch(err => console.log('MathJax 渲染异常: ', err));
+        }
+
+        // --- 物理落盘记录：将合并后的长图和结果发给主进程 ---
+        ipcRenderer.send('save-history-record', {
+          imgData: mergedDataUrl, // 存入拼接后的长图
+          text: currentRawText,
+          consistent: finalResult.is_consistent,
+          raw_data: { qwen: raw["模型 1"], glm: raw["模型 2"], doubao: raw["模型 3"] }
+        });
+
+      } catch (error) {
+        document.getElementById('final-content').innerText = '请求异常：' + error.message;
+        badge.innerText = '❌ 系统异常';
+        badge.className = "inline-block self-start px-2.5 py-1 rounded-full font-bold text-xs mb-3 bg-red-600 text-white";
+        statusText.innerText = '异常中断';
+        statusText.className = 'text-red-700 font-medium bg-red-50 px-1.5 py-0.5 rounded';
+      } finally {
+        document.getElementById('loading-text').style.display = 'none';
+        btnAddImg.disabled = false;
+        renderStagingArea(); // 恢复 UI，且不自动清空已成功提交的截图，方便用户重试
+      }
+    });
+
+    // ================= 动作 2：一键复制核心业务 =================
+    document.getElementById('btn-copy-result').addEventListener('click', () => {
+      if (!currentRawText) return;
+
+      const textData = currentRawText;
+      let htmlData = currentRawText
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
+          const cleanFormula = formula.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/"/g, '&quot;').trim();
+          return `<span class="ql-mathjax" latex="${cleanFormula}" mathid="undefined">&#xFEFF;<span contenteditable="false"></span>&#xFEFF;</span>`;
+        })
+        .replace(/\$([^$]+)\$/g, (match, formula) => {
+          const cleanFormula = formula.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/"/g, '&quot;').trim();
+          return `<span class="ql-mathjax" latex="${cleanFormula}" mathid="undefined">&#xFEFF;<span contenteditable="false"></span>&#xFEFF;</span>`;
+        })
+        .replace(/\n/g, '<br>');
+
+      htmlData = `<div>${htmlData}</div>`;
+      clipboard.write({ text: textData, html: htmlData });
+
+      const btn = document.getElementById('btn-copy-result');
+      btn.innerText = '✅ 平台专属格式已复制！';
+      btn.style.backgroundColor = '#ff991f'; 
+
+      setTimeout(() => {
+        btn.innerText = '📋 一键复制标准代码';
+        btn.style.backgroundColor = ''; 
+      }, 2000);
+    });
+  </script>
+</body>
+</html>
