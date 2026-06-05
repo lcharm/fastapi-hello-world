@@ -320,6 +320,11 @@
     })();
 
     // ================= 动作：同步更新下载按钮 =================
+    // 兜底：如果按钮没渲染出来，点击横幅也能触发
+    document.getElementById('update-fail-bar').addEventListener('click', function(e) {
+      if (e.target.id === 'btn-retry-update') return; // 按钮自己处理
+      document.getElementById('btn-retry-update').click();
+    });
     document.getElementById('btn-retry-update').addEventListener('click', async function() {
       const btnRetry = document.getElementById('btn-retry-update');
       btnRetry.disabled = true;
