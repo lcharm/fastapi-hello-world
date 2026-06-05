@@ -57,12 +57,22 @@ function isRemoteNewer(remoteVer, localVer) {
 function httpGet(url) {
   return new Promise((resolve, reject) => {
     const get = url.startsWith('https://') ? https.get : http.get
-    get(url, { timeout: 15000 }, (res) => {
-      if (res.statusCode !== 200) { reject(new Error(`HTTP ${res.statusCode}`)); return }
+    const req = get(url, { timeout: 15000 }, (res) => {
+      if (res.statusCode !== 200) {
+        res.resume() // 排空响应体防止内存泄漏
+        reject(new Error(`HTTP ${res.statusCode}`))
+        return
+      }
       let data = ''
       res.on('data', chunk => data += chunk)
       res.on('end', () => resolve(data))
-    }).on('error', reject)
+      res.on('error', reject)
+    })
+    req.on('timeout', () => {
+      req.destroy()
+      reject(new Error('请求超时'))
+    })
+    req.on('error', reject)
   })
 }
 
@@ -334,12 +344,12 @@ ipcMain.handle('get-history-data', async () => {
 })
 
 ipcMain.handle('retry-update', async () => {
-  // 前台触发的重试下载：直接拉到最新版覆盖缓存
-  try {
+  // 前台触发的重试下载：直接拉到最新版覆盖缓存，30s 硬超时防永久卡死
+  const doUpdate = async () => {
     const versionJson = await httpGet(`${UPDATE_SERVER}/static/version.json`)
     const manifest = JSON.parse(versionJson)
     const targetVersion = manifest.current
-    if (!targetVersion) return { ok: false, error: '无可用版本' }
+    if (!targetVersion) throw new Error('无可用版本')
 
     const versionDir = path.join(CACHE_DIR, targetVersion)
     const files = manifest.versions[targetVersion].files.filter(f => f !== 'main.js')
@@ -347,6 +357,13 @@ ipcMain.handle('retry-update', async () => {
       await downloadFile(`${UPDATE_SERVER}/static/versions/${targetVersion}/${file}`, path.join(versionDir, file))
     }
     return { ok: true, version: targetVersion }
+  }
+
+  try {
+    return await Promise.race([
+      doUpdate(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('更新超时，请检查网络后重试')), 30000))
+    ])
   } catch (err) {
     return { ok: false, error: err.message }
   }
