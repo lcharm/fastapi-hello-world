@@ -67,18 +67,18 @@
           '【DeepSeek 终审结果】',
           record.text,
           '',
-          '【Qwen3 原始输出】',
+          '【千问 原始输出】',
           (record.raw_data && record.raw_data.qwen) || '无返回',
           '',
-          '【GLM-4.6v 原始输出】',
+          '【GLM-4.6V 原始输出】',
           (record.raw_data && record.raw_data.glm) || '无返回',
           '',
-          '【Doubao 原始输出】',
+          '【豆包 原始输出】',
           (record.raw_data && record.raw_data.doubao) || '无返回',
         ].join('\n');
 
-        // 对文本进行 URI 编码，防止打断 HTML 属性的引号拼接
-        const safeCopyText = encodeURIComponent(fullText);
+        // encodeURIComponent 不编码单引号，单引号会打断 onclick 中的字符串字面量
+        const safeCopyText = encodeURIComponent(fullText).replace(/'/g, '%27');
 
         // 原生折叠面板构建原始多模态数据
         let rawHtml = '';
@@ -91,13 +91,13 @@
               </summary>
               <div class="mt-3 grid grid-cols-3 gap-3 cursor-text">
                 <div class="bg-gray-50 border border-gray-100 rounded-lg p-2.5 text-[11px] text-gray-500 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
-                  <div class="font-bold text-gray-400 mb-1 border-b border-gray-200 pb-1">Qwen3</div>${record.raw_data.qwen || '无返回'}
+                  <div class="font-bold text-gray-400 mb-1 border-b border-gray-200 pb-1">千问</div>${record.raw_data.qwen || '无返回'}
                 </div>
                 <div class="bg-gray-50 border border-gray-100 rounded-lg p-2.5 text-[11px] text-gray-500 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
-                  <div class="font-bold text-gray-400 mb-1 border-b border-gray-200 pb-1">GLM-4.6v</div>${record.raw_data.glm || '无返回'}
+                  <div class="font-bold text-gray-400 mb-1 border-b border-gray-200 pb-1">GLM-4.6V</div>${record.raw_data.glm || '无返回'}
                 </div>
                 <div class="bg-gray-50 border border-gray-100 rounded-lg p-2.5 text-[11px] text-gray-500 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
-                  <div class="font-bold text-gray-400 mb-1 border-b border-gray-200 pb-1">Doubao</div>${record.raw_data.doubao || '无返回'}
+                  <div class="font-bold text-gray-400 mb-1 border-b border-gray-200 pb-1">豆包</div>${record.raw_data.doubao || '无返回'}
                 </div>
               </div>
             </details>
@@ -109,7 +109,7 @@
             <div class="flex justify-between items-center mb-4 border-b border-gray-50 pb-3">
               <span class="text-sm font-semibold text-gray-500">${record.time}</span>
               <div class="flex items-center gap-3">
-                <button onclick="copyToClipboard(this, decodeURIComponent('${safeCopyText}'))" class="flex items-center gap-1 px-2 py-1 bg-gray-50 hover:bg-gray-100 text-gray-600 text-[11px] font-bold rounded border border-gray-200 transition-colors active:scale-95">
+                <button onclick="try { copyToClipboard(this, decodeURIComponent('${safeCopyText}')); } catch(e) { copyToClipboard(this, '复制失败，请手动选择文本复制'); }" class="flex items-center gap-1 px-2 py-1 bg-gray-50 hover:bg-gray-100 text-gray-600 text-[11px] font-bold rounded border border-gray-200 transition-colors active:scale-95">
                   📋 复制结果文本
                 </button>
                 <span class="text-xs font-bold px-2 py-1 rounded ${record.consistent ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}">

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -56,12 +56,22 @@
     </div>
   </div>
 
-  <div class="flex gap-5 items-center bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-3">
-    <button id="btn-paste" class="px-5 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5">
-      📋 从系统剪贴板读取并识别
-    </button>
-    <img id="preview" class="hidden max-h-20 max-w-[300px] border-2 border-dashed border-gray-300 rounded-lg" alt="暂无图片，请截图后点击左侧按钮" />
-    <span id="loading-text" class="text-amber-500 font-bold hidden">正在呼叫多模态大模型，请稍候...</span>
+  <div class="flex flex-col bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-3 gap-3 transition-all">
+    <div class="flex items-center gap-3">
+      <button id="btn-add-img" class="px-4 py-2.5 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 font-semibold rounded-lg shadow-sm transition-all active:scale-95 flex items-center gap-2 text-sm">
+        📥 贴入剪贴板 (可多次截图)
+      </button>
+      <button id="btn-submit" disabled class="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm flex items-center gap-2">
+        🚀 合并并开始审题
+      </button>
+      <button id="btn-clear" class="px-3 py-2 text-gray-400 hover:text-red-500 text-sm transition-colors hidden">
+        🗑️ 清空暂存区
+      </button>
+      <span id="loading-text" class="text-amber-500 font-bold hidden text-sm ml-2">正在合并图片并并发呼叫模型...</span>
+    </div>
+
+    <div id="staging-area" class="hidden w-full overflow-x-auto pb-2 flex gap-3 items-center min-h-[100px] border-t border-gray-100 pt-3">
+      </div>
   </div>
 
   <div id="update-fail-bar" class="hidden bg-amber-50 border border-amber-300 text-amber-800 text-sm rounded-lg px-4 py-2.5 mb-3 flex items-center justify-between shadow-sm">
@@ -79,17 +89,17 @@
       </h3>
       
       <div class="border border-gray-200 rounded-xl p-3.5 mb-3 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
-        <div class="font-semibold text-gray-400 mb-1.5 text-xs tracking-wide">Qwen3-vl-flash 输出</div>
+        <div class="font-semibold text-gray-400 mb-1.5 text-xs tracking-wide">千问 (qwen3.5-plus) 输出</div>
         <div class="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-mono" id="model1-res">等待识别...</div>
       </div>
       
       <div class="border border-gray-200 rounded-xl p-3.5 mb-3 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
-        <div class="font-semibold text-gray-400 mb-1.5 text-xs tracking-wide">Glm-4.6v-flashx 输出</div>
+        <div class="font-semibold text-gray-400 mb-1.5 text-xs tracking-wide">GLM (GLM-4.6V) 输出</div>
         <div class="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-mono" id="model2-res">等待识别...</div>
       </div>
       
       <div class="border border-gray-200 rounded-xl p-3.5 bg-white shadow-sm hover:shadow-md transition-shadow duration-200">
-        <div class="font-semibold text-gray-400 mb-1.5 text-xs tracking-wide">Doubao-seed-2-0-mini-260428 输出</div>
+        <div class="font-semibold text-gray-400 mb-1.5 text-xs tracking-wide">豆包 (Doubao-Seed-2.0-lite) 输出</div>
         <div class="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap font-mono" id="model3-res">等待识别...</div>
       </div>
     </div>
@@ -280,7 +290,7 @@
       // 初始化执行一次
       await syncVersionStatus();
 
-      // “检查更新”按钮主动交互
+      // "检查更新"按钮主动交互
       btnCheckUpdate.addEventListener('click', async () => {
         btnCheckUpdate.disabled = true;
         btnCheckUpdate.innerText = '正在检索...';
@@ -293,7 +303,7 @@
         
         if (globalInfo && globalInfo.version) {
           if (hasNewVersion(globalInfo.version, LOCAL_UI_VERSION)) {
-            alert(`检查完成！发现云端更高版本 [ ${globalInfo.version} ]。\n\n系统已为您自动激活上方的“立即同步”横幅，点击即可一键无感热更新。`);
+            alert(`检查完成！发现云端更高版本 [ ${globalInfo.version} ]。\n\n系统已为您自动激活上方的"立即同步"横幅，点击即可一键无感热更新。`);
           } else {
             alert(`检查完成！当前工作台已是最新版本 (${LOCAL_UI_VERSION})。\n\n无需任何操作，请放心审题。`);
           }
@@ -339,35 +349,86 @@
 
     let currentRawText = "";
 
-    // ================= 核心业务：监听“粘贴并识别”按钮 =================
-    document.getElementById('btn-paste').addEventListener('click', async () => {
-      // ==== 在这里增加前置拦截逻辑 ====
-      if (!getStoredJwt()) {
-        alert('未检测到登录凭证，请先登录！');
-        document.getElementById('login-overlay').style.display = 'flex';
+    // ================= 核心业务：多图暂存与 Canvas 无缝拼接 =================
+    let stagedImages = []; // 用于存放内存中的原生图片数据
+
+    const btnAddImg = document.getElementById('btn-add-img');
+    const btnSubmit = document.getElementById('btn-submit');
+    const btnClear = document.getElementById('btn-clear');
+    const stagingArea = document.getElementById('staging-area');
+    const statusText = document.getElementById('status-text');
+
+    // 渲染暂存区 UI
+    function renderStagingArea() {
+      if (stagedImages.length === 0) {
+        stagingArea.classList.add('hidden');
+        btnClear.classList.add('hidden');
+        btnSubmit.disabled = true;
+        stagingArea.innerHTML = '';
+        btnSubmit.innerText = '🚀 合并并开始审题';
         return;
       }
 
+      stagingArea.classList.remove('hidden');
+      btnClear.classList.remove('hidden');
+      btnSubmit.disabled = false;
+      btnSubmit.innerText = `🚀 拼接 ${stagedImages.length} 张图并审题`;
+
+      // 动态生成带有删除按钮的缩略图
+      stagingArea.innerHTML = stagedImages.map((imgUrl, index) => `
+        <div class="relative shrink-0 group">
+          <img src="${imgUrl}" class="h-24 border border-gray-300 rounded shadow-sm object-contain bg-gray-50" />
+          <button onclick="removeImage(${index})" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 shadow-md">
+            ✕
+          </button>
+        </div>
+      `).join('');
+    }
+
+    // 全局暴露给 HTML 删除按钮用的函数
+    window.removeImage = function(index) {
+      stagedImages.splice(index, 1);
+      renderStagingArea();
+    };
+
+    btnClear.addEventListener('click', () => {
+      stagedImages = [];
+      renderStagingArea();
+    });
+
+    // 动作 1：将剪贴板图片贴入暂存区
+    btnAddImg.addEventListener('click', () => {
       const img = clipboard.readImage();
       if (img.isEmpty()) {
-        alert('剪贴板中没有发现图片，请先使用微信或系统截图！');
+        alert('剪贴板中没有发现图片，请先截图！');
         return;
       }
+      // 将 Electron 的 NativeImage 转为 DataURL 存入数组
+      stagedImages.push(img.toDataURL());
+      renderStagingArea();
+    });
 
-      const pasteBtn = document.getElementById('btn-paste');
-      const statusText = document.getElementById('status-text');
-      
-      pasteBtn.disabled = true;
-      pasteBtn.innerText = '⏳ 并发处理中...';
-      pasteBtn.classList.add('opacity-50', 'cursor-not-allowed');
-      statusText.innerText = '⏳ 正在并发呼叫多模态大模型...';
-      statusText.className = 'text-amber-700 font-medium bg-amber-50 px-1.5 py-0.5 rounded animate-pulse';
+    // 附带福利：支持键盘全局 Ctrl+V 直接贴图
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        if (document.getElementById('login-overlay').style.display !== 'none') return;
+        btnAddImg.click();
+      }
+    });
 
-      const previewImg = document.getElementById('preview');
-      previewImg.src = img.toDataURL();
-      previewImg.classList.remove('hidden');
+    // 动作 2：合并图片并提交给后端
+    btnSubmit.addEventListener('click', async () => {
+      if (stagedImages.length === 0) return;
+
+      btnAddImg.disabled = true;
+      btnSubmit.disabled = true;
+      btnClear.classList.add('hidden');
       document.getElementById('loading-text').style.display = 'inline';
 
+      statusText.innerText = '⏳ 正在合成长图...';
+      statusText.className = 'text-amber-700 font-medium bg-amber-50 px-1.5 py-0.5 rounded animate-pulse';
+
+      // 界面重置提示
       document.getElementById('model1-res').innerText = '多模型并发思考中...';
       document.getElementById('model2-res').innerText = '多模型并发思考中...';
       document.getElementById('model3-res').innerText = '多模型并发思考中...';
@@ -379,28 +440,47 @@
       badge.style.color = '#172b4d';
       document.getElementById('warning-msg').innerText = '';
       document.getElementById('btn-copy-result').style.display = 'none';
-      document.getElementById('right-panel').className = "flex-[5] bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl shadow-sm border-2 border-blue-200 flex flex-col";
-
-      const API_BASE = getApiBase();
 
       try {
-        document.getElementById('loading-text').innerText = '正在连接后端服务...';
-        let backendAlive = false;
-        for (let i = 0; i < 3; i++) {
-          try {
-            const res = await fetch(`${API_BASE}/health`);
-            if (res.ok) { backendAlive = true; break; }
-          } catch (_) {}
-          if (i < 2) await new Promise(r => setTimeout(r, 1000));
-        }
-        if (!backendAlive) throw new Error('后端服务连接失败，请重试。');
+        // --- 核心：Canvas 垂直拼图逻辑 ---
+        const imgElements = await Promise.all(stagedImages.map(dataUrl => {
+          return new Promise(resolve => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.src = dataUrl;
+          });
+        }));
 
-        const buffer = img.toPNG();
-        const blob = new Blob([buffer], { type: 'image/png' });
+        // 计算拼图后的总高度和最大宽度
+        const totalHeight = imgElements.reduce((sum, img) => sum + img.height, 0);
+        const maxWidth = Math.max(...imgElements.map(img => img.width));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = maxWidth;
+        canvas.height = totalHeight;
+        const ctx = canvas.getContext('2d');
+
+        // 填充白色背景（防止 PNG 透明底变黑）
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        let currentY = 0;
+        imgElements.forEach(img => {
+          // 将每张图左对齐向下平铺
+          ctx.drawImage(img, 0, currentY);
+          currentY += img.height;
+        });
+
+        // 转换为发送给后端的 Blob 和用于历史记录的 DataURL
+        const mergedDataUrl = canvas.toDataURL('image/png');
+        const finalBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        // ----------------------------------
+
+        statusText.innerText = '⏳ 并发呼叫多模态模型...';
+        const API_BASE = getApiBase();
         const formData = new FormData();
-        formData.append('file', blob, 'clipboard.png');
+        formData.append('file', finalBlob, 'merged_clipboard.png');
 
-        document.getElementById('loading-text').innerText = '数据已分发至并发池，等待裁判合流...';
         let data;
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
@@ -412,7 +492,7 @@
             if (response.status === 401) {
               clearJwt();
               document.getElementById('login-overlay').style.display = 'flex';
-              throw new Error('登录已过期或账号被禁用，请重新登录');
+              throw new Error('登录已过期，请重新登录');
             }
             if (!response.ok) throw new Error(`HTTP 错误: ${response.status}`);
             data = await response.json();
@@ -425,36 +505,26 @@
 
         if (data.status === 'error') throw new Error(data.message);
 
+        // 渲染原始模型结果
         const raw = data.raw_data;
         document.getElementById('model1-res').innerText = raw["模型 1"] || '无返回';
         document.getElementById('model2-res').innerText = raw["模型 2"] || '无返回';
         document.getElementById('model3-res').innerText = raw["模型 3"] || '无返回';
 
+        // 处理最终裁决结果
         const finalResult = data.final_result;
-        const survivorCount = data.survivor_count;
-        const rightPanel = document.getElementById('right-panel');
-
         badge.style.background = '';
         badge.style.color = '';
 
-        if (survivorCount === 1) {
+        if (data.survivor_count === 1) {
           badge.innerText = '❌ 孤证预警';
           badge.className = "inline-block self-start px-2.5 py-1 rounded-full font-bold text-xs mb-3 bg-red-600 text-white animate-pulse";
-          rightPanel.className = "flex-[5] bg-red-50 p-4 rounded-xl shadow-sm border-2 border-red-500 flex flex-col";
-          document.getElementById('warning-msg').innerText = '⚠️ 警告：其他两路模型阵亡。单模型输出无法进行交叉验证，请老师务必人工核对！';
+          document.getElementById('warning-msg').innerText = '⚠️ 警告：单模型输出无法进行交叉验证，请老师人工核对！';
         } else {
-          if (finalResult.is_consistent) {
-            badge.innerText = '✅ 意见一致';
-            badge.style.background = '#e3fcef';
-            badge.style.color = '#006644';
-            badge.className = "inline-block self-start px-2.5 py-1 rounded-full font-bold text-xs mb-3";
-          } else {
-            badge.innerText = '⚠️ 存在分歧';
-            badge.style.background = '#ffebe6';
-            badge.style.color = '#bf2600';
-            badge.className = "inline-block self-start px-2.5 py-1 rounded-full font-bold text-xs mb-3";
-          }
-          rightPanel.className = "flex-[5] bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl shadow-sm border-2 border-blue-200 flex flex-col";
+          badge.innerText = finalResult.is_consistent ? '✅ 意见一致' : '⚠️ 存在分歧';
+          badge.style.background = finalResult.is_consistent ? '#e3fcef' : '#ffebe6';
+          badge.style.color = finalResult.is_consistent ? '#006644' : '#bf2600';
+          badge.className = "inline-block self-start px-2.5 py-1 rounded-full font-bold text-xs mb-3";
           document.getElementById('warning-msg').innerText = finalResult.warning || '';
         }
 
@@ -465,39 +535,33 @@
         statusText.innerText = '闲置';
         statusText.className = 'text-gray-700 font-medium bg-gray-100 px-1.5 py-0.5 rounded';
 
-        if (window.MathJax) {
+        if (window.MathJax && typeof window.MathJax.typesetPromise === 'function') {
           MathJax.typesetPromise([
             document.getElementById('final-content'),
             document.getElementById('model1-res'),
             document.getElementById('model2-res'),
             document.getElementById('model3-res')
-          ]).catch((err) => console.log('渲染延迟: ', err));
+          ]).catch(err => console.log('MathJax 渲染异常: ', err));
         }
 
+        // --- 物理落盘记录：将合并后的长图和结果发给主进程 ---
         ipcRenderer.send('save-history-record', {
-          imgData: previewImg.src,
+          imgData: mergedDataUrl, // 存入拼接后的长图
           text: currentRawText,
           consistent: finalResult.is_consistent,
-          raw_data: {
-            qwen: raw['模型 1'],
-            glm: raw['模型 2'],
-            doubao: raw['模型 3']
-          }
+          raw_data: { qwen: raw["模型 1"], glm: raw["模型 2"], doubao: raw["模型 3"] }
         });
 
       } catch (error) {
         document.getElementById('final-content').innerText = '请求异常：' + error.message;
-        badge.innerText = '❌ 系统请求异常';
+        badge.innerText = '❌ 系统异常';
         badge.className = "inline-block self-start px-2.5 py-1 rounded-full font-bold text-xs mb-3 bg-red-600 text-white";
-        document.getElementById('right-panel').className = "flex-[5] bg-red-50 p-4 rounded-xl shadow-sm border-2 border-red-500 flex flex-col";
-        
         statusText.innerText = '异常中断';
         statusText.className = 'text-red-700 font-medium bg-red-50 px-1.5 py-0.5 rounded';
       } finally {
         document.getElementById('loading-text').style.display = 'none';
-        pasteBtn.disabled = false;
-        pasteBtn.innerText = '📋 从系统剪贴板读取并识别';
-        pasteBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        btnAddImg.disabled = false;
+        renderStagingArea(); // 恢复 UI，且不自动清空已成功提交的截图，方便用户重试
       }
     });
 

@@ -12,6 +12,7 @@ from openai import AsyncOpenAI
 import logging
 import time
 import uuid
+import textwrap
 import uvicorn
 
 from auth import init_db, authenticate_user, decode_jwt, is_user_active
@@ -75,12 +76,30 @@ deepseek_keys = os.getenv("DEEPSEEK_KEYS", "你的默认DeepSeekkey").split(",")
 
 API_TIMEOUT = int(os.getenv("API_TIMEOUT", "90"))
 
-FAILURE_MARKER = "[请求失败]"
-
 REQUEST_SEMAPHORE = None
 
 
 _key_index = {}
+
+BASE_SYSTEM_PROMPT = textwrap.dedent("""\
+    你是一个严谨的解题引擎。请按以下系统约束输出。
+
+    【系统输出红线】：
+    1. 公式定界符：行内公式强制用 $ 包裹，独立公式用 $$ 包裹。绝对禁止使用 \\( \\) 或 \\[ \\]。
+    2. 禁止加粗：绝对禁止使用 Markdown 加粗符号 (**)。
+    3. 禁止废话：禁止任何开场白或结束语。
+
+    【题型处理规范】：
+    - 选择题：[题目详解] 中必须逐项分析 ABCD 对错原因。
+    - 主观题/解答题：给出无跳步的极简推导过程。
+
+    【强制输出结构】（严格按此顺序，禁止增删节点）：
+    【题目判定】: (限20字，明确学段、学科及考点)
+    【解答】:
+    [思路点拨] (一语道破解题规则或公式)
+    [题目详解] (严格按题型处理规范输出)
+    【答案】: (仅输出最终纯字母或数值，必须位于文末)
+    """)
 
 # 预创建客户端池，避免每次请求重复建连/TLS握手
 _CLIENT_POOLS = {
@@ -118,8 +137,12 @@ async def ask_qwen(base64_image, prompt, request_id=""):
     try:
         response = await asyncio.wait_for(
             client.chat.completions.create(
-                model="qwen3-vl-flash",
+                model="qwen3.5-plus",
                 messages=[
+                    {
+                        "role": "system",
+                        "content": BASE_SYSTEM_PROMPT
+                    },
                     {
                         "role": "user",
                         "content": [
@@ -129,17 +152,17 @@ async def ask_qwen(base64_image, prompt, request_id=""):
                     }
                 ],
                 temperature=0.1,
-                max_tokens=800
+                max_tokens=4096
             ),
             timeout=API_TIMEOUT
         )
         elapsed = time.time() - t0
         logger.info(f"[{request_id}] 千问 OK {elapsed:.1f}s")
-        return response.choices[0].message.content
+        return {"status": "success", "content": response.choices[0].message.content}
     except Exception as e:
         elapsed = time.time() - t0
         logger.warning(f"[{request_id}] 千问 FAIL {elapsed:.1f}s: {e}")
-        return f"{FAILURE_MARKER}: {e}"
+        return {"status": "error", "content": str(e)}
 
 
 async def ask_glm(base64_image, prompt, request_id=""):
@@ -148,8 +171,12 @@ async def ask_glm(base64_image, prompt, request_id=""):
     try:
         response = await asyncio.wait_for(
             client.chat.completions.create(
-                model="glm-4.6v-flashx",
+                model="GLM-4.6V",
                 messages=[
+                    {
+                        "role": "system",
+                        "content": BASE_SYSTEM_PROMPT
+                    },
                     {
                         "role": "user",
                         "content": [
@@ -166,11 +193,11 @@ async def ask_glm(base64_image, prompt, request_id=""):
         )
         elapsed = time.time() - t0
         logger.info(f"[{request_id}] GLM OK {elapsed:.1f}s")
-        return response.choices[0].message.content
+        return {"status": "success", "content": response.choices[0].message.content}
     except Exception as e:
         elapsed = time.time() - t0
         logger.warning(f"[{request_id}] GLM FAIL {elapsed:.1f}s: {e}")
-        return f"{FAILURE_MARKER}: {e}"
+        return {"status": "error", "content": str(e)}
 
 async def ask_doubao(base64_image, prompt, request_id=""):
     t0 = time.time()
@@ -178,17 +205,11 @@ async def ask_doubao(base64_image, prompt, request_id=""):
     try:
         response = await asyncio.wait_for(
             client.chat.completions.create(
-                model="doubao-seed-2-0-mini-260428",
+                model="Doubao-Seed-2.0-lite",
                 messages=[
                     {
                         "role": "system",
-                        "content": (
-                            "你是一个严谨的教育辅助AI。你只输出结构化的解题内容，绝不输出任何客套、废话、开场白或结束语。\n\n"
-                            "格式强约束：\n"
-                            "1. 所有数学公式必须使用标准 LaTeX，行内用 $...$，独立公式用 $$...$$。\n"
-                            "2. 绝对禁止使用 Markdown 加粗符号（**）。\n"
-                            "3. 如果是选择题，必须逐项分析 A、B、C、D 四个选项的对错原因，绝不允许只解释正确选项。"
-                        ),
+                        "content": BASE_SYSTEM_PROMPT
                     },
                     {
                         "role": "user",
@@ -205,11 +226,11 @@ async def ask_doubao(base64_image, prompt, request_id=""):
         )
         elapsed = time.time() - t0
         logger.info(f"[{request_id}] 豆包 OK {elapsed:.1f}s")
-        return response.choices[0].message.content
+        return {"status": "success", "content": response.choices[0].message.content}
     except Exception as e:
         elapsed = time.time() - t0
         logger.warning(f"[{request_id}] 豆包 FAIL {elapsed:.1f}s: {e}")
-        return f"{FAILURE_MARKER}: {e}"
+        return {"status": "error", "content": str(e)}
 
 
 
@@ -219,32 +240,29 @@ async def judge_answers(comparison_text, survivor_count, request_id=""):
     if survivor_count == 1:
         task_desc = "当前仅有 1 份答案，你无法进行交叉比对。请仅做格式清洗（LaTeX 标准化），并直接采纳该答案。"
         consistency_default = "false"
-        warning_req = "请在 warning 中输出：⚠️ 此结果为孤证，未经交叉验证，仅供参考，请务必人工核对。"
+        warning_value = "⚠️ 此结果为孤证，未经交叉验证，仅供参考，请务必人工核对。"
     else:
         task_desc = f"当前有 {survivor_count} 份答案，请比对它们的一致性。"
         consistency_default = "true 或 false（视实际一致性而定）"
-        warning_req = "如三份不一致，简述分歧点；一致则留空。"
+        warning_value = f"如 {survivor_count} 份答案存在分歧，简述分歧点；一致则留空。"
 
     system_prompt = (
-        "你是一个严谨的数据质检与排版专家。请比对提供的解题答案。\n"
+        "你是一个数据比对与清洗引擎。你无法看到原图，仅负责多路文本一致性比对统票与排版清洗。\n"
         "你必须严格输出一个 JSON 对象，不要输出任何额外的解释，也不要使用 Markdown 代码块（不要输出 ```json），直接以 { 开始，以 } 结束。\n\n"
         "JSON 格式如下：\n"
         "{\n"
         '  "is_consistent": ' + consistency_default + ',\n'
-        '  "final_answer": "如果是选择题，【必须】仅输出最终选项字母（如 B 或 故选B）；如果是填空/解答题，输出核心结论或简要推导过程。",\n'
-        '  "final_explanation": "【思路点拨】\\nXXXX\\n\\n【题目解析】\\nXXXX"\n'
+        '  "final_answer": "必须仅提取最终核心结果，例如纯字母 \'B\' 或纯公式 \'x=2\'，绝对禁止附带 \'故选\' 或其他说明文字。",\n'
+        '  "final_explanation": "【思路点拨】\\nXXXX\\n\\n【题目解析】\\nXXXX",\n'
+        '  "warning": "' + warning_value + '"\n'
         "}\n\n"
-        "内容业务规范（核心触线红线）：\n"
+        "内容业务规范：\n"
         "1. 严格区分题型：遇到选择题时，绝对不允许在 final_answer 字段中输出大段文字推导，只能输出选项结论；所有的详细推导过程必须全部放在【题目解析】中。\n"
-        "2. 【题目解析】部分必须严格做到以下三点：\n"
-        "   - 不出错：解答内容每一步均不能出错，要求无错别字、无病句；必须符合当前学段的学科规范。\n"
-        "   - 不跳步：解答过程要逻辑清晰，步骤严谨，不能出现影响理解的跳步，绝对不能直接使用经验性结论。\n"
-        "   - 不超纲：所用知识点与解题方法均在对应学段的教材中学习过，不可使用超纲内容。\n"
-        "3. 【思路点拨】部分：根据题干分析问题，帮助学生打开思路，找到解题方法，在思路点拨中明确计算方法、运算规则等。\n\n"
+        "2. 【思路点拨】部分：根据题干分析问题，帮助学生打开思路，找到解题方法。\n\n"
         "排版清洗强约束（违背将直接导致前端页面解析崩溃）：\n"
         "1. 必须清除原始文本中所有用于强调的 Markdown 加粗符号（**）。\n"
         "2. 【致命红线】绝对禁止使用 \\( ... \\) 或 \\[ ... \\] 作为公式定界符！\n"
-        "3. 图文混排时，行内数学公式必须严格使用 $ 包裹（如 $x=2$），独立段落的数学公式必须严格使用 $$ 包裹。\n"
+        "3. 行内数学公式必须严格使用 $ 包裹（如 $x=2$），独立段落的数学公式必须严格使用 $$ 包裹。\n"
         "4. 确保输出的纯 LaTeX 语法正确无误，禁止中文标点混入公式内部。"
     )
 
@@ -273,7 +291,19 @@ async def judge_answers(comparison_text, survivor_count, request_id=""):
             )
             raw_result = response.choices[0].message.content
             logger.info(f"[{request_id}] DeepSeek 裁判 OK")
-            return json.loads(raw_result)
+            # 清洗层：防御偶发的 markdown 代码块包裹或首尾杂讯
+            cleaned = raw_result.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[-1] if "\n" in cleaned else cleaned[3:]
+                if cleaned.endswith("```"):
+                    cleaned = cleaned[:-3]
+                cleaned = cleaned.strip()
+            # 定位 JSON 边界，剔除前后可能的解释文本
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                cleaned = cleaned[start:end + 1]
+            return json.loads(cleaned)
         except json.JSONDecodeError:
             if attempt < max_retries - 1:
                 logger.warning(f"[{request_id}] DeepSeek JSON 解析失败，重试 {attempt + 1}/{max_retries - 1}")
@@ -326,51 +356,19 @@ async def solve_problem(file: UploadFile = File(...), token: str = Security(veri
     try:
         contents = await file.read()
         base64_image = base64.b64encode(contents).decode('utf-8')
-        # 1. 千问提示词：
-        prompt_qwen = (
-            "你是一个极其冷酷、精简的答题程序。识别题目并给出结果。\n\n"
-            "绝对红线（违背将导致系统解析崩溃）：\n"
-            "1. 绝不允许抄写题干信息。\n"
-            "2. 绝不允许输出“好的”、“解：”等任何开场白、客套话或结束语。\n"
-            "3. 绝不允许在输出结果中展现你的内部推导过程、自我纠错或自言自语。\n"
-            "4. 绝不允许使用 Markdown 加粗符号（**）。\n\n"
-            "强制输出模板（必须且只能以【答案】开头，绝不允许增删节点）：\n"
-            "【答案】: (仅填最终结果或选项字母，如：B)\n"
-            "【解答】:\n"
-            "[思路点拨] (限30字以内，一语道破核心公式或考点)\n"
-            "[题目详解] (总字数严格控制在150字以内。若为选择题，必须采用极简判定体，例如：“A错：方向反了；B对：符合公式；C错：数值不对”。严禁展开长篇论证！)"
-        )
+        # 统一极简用户指令（核心约束见 BASE_SYSTEM_PROMPT）
+        user_instruction = "请识别图片并按系统规范解答。"
 
-        # 2. GLM提示词：
-        prompt_glm = """请识别图片中的题目并解答。
-        注意：由于你已开启内部 thinking 模式，请将所有复杂的逻辑推导留在思考区。
-        你的最终文字输出必须极度精简，绝对禁止复述题目内容，避免因输出过多导致截断。
-        必须严格按此结构输出：
-        【答案】: (仅输出结果)
-        【解答】:
-        [思路点拨] (限50字，点明知识点)
-        [题目详解] (步骤极简，禁用加粗符号)"""
-
-        # 3. 豆包提示词：
-        prompt_doubao = """请识别图片中的题目并提供解答。
-        为了防止输出被截断，请务必严格控制字数，保持解答步骤极简。绝不要重复题目干信息。
-        如果是选择题，必须简要分析 ABCD 四个选项。
-        严格结构：
-        【答案】:
-        【解答】:
-        [思路点拨] (概括考点)
-        [题目详解] (极简列式计算)"""
-
-        logger.info(f"[{request_id}] 三路并发呼叫开始 (使用独立提示词)")
-        task1 = ask_qwen(base64_image, prompt_qwen, request_id)
-        task2 = ask_glm(base64_image, prompt_glm, request_id)
-        task3 = ask_doubao(base64_image, prompt_doubao, request_id)
-        raw_results = await asyncio.gather(task1, task2, task3)
+        logger.info(f"[{request_id}] 三路并发呼叫开始 (统一系统提示词)")
+        task1 = ask_qwen(base64_image, user_instruction, request_id)
+        task2 = ask_glm(base64_image, user_instruction, request_id)
+        task3 = ask_doubao(base64_image, user_instruction, request_id)
+        raw_results = await asyncio.gather(task1, task2, task3, return_exceptions=True)
 
         # 去名化映射 + 幸存者检测
         all_items = []
         for (public_name, internal_name), raw_content in zip(MODEL_MAP, raw_results):
-            is_alive = FAILURE_MARKER not in str(raw_content)
+            is_alive = isinstance(raw_content, dict) and raw_content.get("status") == "success"
             all_items.append({
                 "id": public_name,
                 "internal_name": internal_name,
@@ -385,7 +383,7 @@ async def solve_problem(file: UploadFile = File(...), token: str = Security(veri
         raw_data_for_frontend = {}
         for item in all_items:
             if item["alive"]:
-                raw_data_for_frontend[item["id"]] = item["content"]
+                raw_data_for_frontend[item["id"]] = item["content"]["content"]
             else:
                 raw_data_for_frontend[item["id"]] = "⚠️ 该模型响应超时或异常，已自动屏蔽。"
 
@@ -401,7 +399,7 @@ async def solve_problem(file: UploadFile = File(...), token: str = Security(veri
 
         # 构造 DeepSeek 比对文本（使用公开名称）
         comparison_text = "\n\n".join(
-            f"【{s['id']}答案】\n{s['content']}" for s in survivors
+            f"【{s['id']}答案】\n{s['content']['content']}" for s in survivors
         )
 
         logger.info(f"[{request_id}] 幸存 {survivor_count} 路，唤醒 DeepSeek 比对...")
