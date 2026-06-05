@@ -7,7 +7,10 @@ from fastapi.staticfiles import StaticFiles
 import base64
 import asyncio
 import json
+import re
+import io
 import os
+from PIL import Image
 from openai import AsyncOpenAI
 import logging
 import time
@@ -74,7 +77,7 @@ glm_keys = os.getenv("GLM_KEYS", "你的默认GLMkey").split(",")
 doubao_keys = os.getenv("DOUBAO_KEYS", "你的默认豆包key").split(",")
 deepseek_keys = os.getenv("DEEPSEEK_KEYS", "你的默认DeepSeekkey").split(",")
 
-API_TIMEOUT = int(os.getenv("API_TIMEOUT", "90"))
+API_TIMEOUT = int(os.getenv("API_TIMEOUT", "180"))
 
 REQUEST_SEMAPHORE = None
 
@@ -93,12 +96,18 @@ BASE_SYSTEM_PROMPT = textwrap.dedent("""\
     - 选择题：[题目详解] 中必须逐项分析 ABCD 对错原因。
     - 主观题/解答题：给出无跳步的极简推导过程。
 
+    【强制终止指令】：
+    推导一旦得出明确结论，必须立即输出【答案】节点并严格停止生成！严禁进行多余的自我推翻、假设验证或二次演算。
+
+    【Token 预算守护】（最高优先级）：
+    你的输出上限极有限。若 [题目详解] 展开后发现即将到达篇幅极限，必须立刻放弃剩余推导细节，直接跳到【答案】节点输出结论。【答案】被截断 = 整题作废，而省略中间步骤远比丢失答案安全。
+
     【强制输出结构】（严格按此顺序，禁止增删节点）：
     【题目判定】: (限20字，明确学段、学科及考点)
     【解答】:
     [思路点拨] (一语道破解题规则或公式)
     [题目详解] (严格按题型处理规范输出)
-    【答案】: (仅输出最终纯字母或数值，必须位于文末)
+    【答案】: (若为选择题，此处强制仅限输出 A/B/C/D 中的单字母，严禁出现具体数值；若为解答题，输出极简最终结论。此节点必须位于全文最后一行，之后禁止输出任何字符！)
     """)
 
 # 预创建客户端池，避免每次请求重复建连/TLS握手
@@ -152,7 +161,7 @@ async def ask_qwen(base64_image, prompt, request_id=""):
                     }
                 ],
                 temperature=0.1,
-                max_tokens=4096
+                max_tokens=8192
             ),
             timeout=API_TIMEOUT
         )
@@ -205,7 +214,7 @@ async def ask_doubao(base64_image, prompt, request_id=""):
     try:
         response = await asyncio.wait_for(
             client.chat.completions.create(
-                model="Doubao-Seed-2.0-lite",
+                model="doubao-seed-2-0-lite-260428",
                 messages=[
                     {
                         "role": "system",
@@ -214,13 +223,14 @@ async def ask_doubao(base64_image, prompt, request_id=""):
                     {
                         "role": "user",
                         "content": [
-                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}},
-                            {"type": "text", "text": prompt}
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}
                         ]
                     }
                 ],
                 temperature=0.1,
-                max_tokens=4096
+                max_tokens=8192,
+                extra_body={"thinking": {"type": "enabled", "budget_tokens": 2048}}
             ),
             timeout=API_TIMEOUT
         )
@@ -247,23 +257,19 @@ async def judge_answers(comparison_text, survivor_count, request_id=""):
         warning_value = f"如 {survivor_count} 份答案存在分歧，简述分歧点；一致则留空。"
 
     system_prompt = (
-        "你是一个数据比对与清洗引擎。你无法看到原图，仅负责多路文本一致性比对统票与排版清洗。\n"
-        "你必须严格输出一个 JSON 对象，不要输出任何额外的解释，也不要使用 Markdown 代码块（不要输出 ```json），直接以 { 开始，以 } 结束。\n\n"
-        "JSON 格式如下：\n"
+        "你是数据比对与清洗引擎。你无法看到原图，仅负责多路文本一致性比对与排版清洗。\n"
+        "必须严格输出纯 JSON（以 { 起，以 } 止，禁用 ```json 包裹）。\n\n"
+        "JSON 结构：\n"
         "{\n"
         '  "is_consistent": ' + consistency_default + ',\n'
-        '  "final_answer": "必须仅提取最终核心结果，例如纯字母 \'B\' 或纯公式 \'x=2\'，绝对禁止附带 \'故选\' 或其他说明文字。",\n'
+        '  "final_answer": "最终核心结果，选择题限单字母如 B，解答题限纯公式如 x=2，禁止附带任何说明文字。",\n'
         '  "final_explanation": "【思路点拨】\\nXXXX\\n\\n【题目解析】\\nXXXX",\n'
         '  "warning": "' + warning_value + '"\n'
         "}\n\n"
-        "内容业务规范：\n"
-        "1. 严格区分题型：遇到选择题时，绝对不允许在 final_answer 字段中输出大段文字推导，只能输出选项结论；所有的详细推导过程必须全部放在【题目解析】中。\n"
-        "2. 【思路点拨】部分：根据题干分析问题，帮助学生打开思路，找到解题方法。\n\n"
-        "排版清洗强约束（违背将直接导致前端页面解析崩溃）：\n"
-        "1. 必须清除原始文本中所有用于强调的 Markdown 加粗符号（**）。\n"
-        "2. 【致命红线】绝对禁止使用 \\( ... \\) 或 \\[ ... \\] 作为公式定界符！\n"
-        "3. 行内数学公式必须严格使用 $ 包裹（如 $x=2$），独立段落的数学公式必须严格使用 $$ 包裹。\n"
-        "4. 确保输出的纯 LaTeX 语法正确无误，禁止中文标点混入公式内部。"
+        "业务规范：\n"
+        "1. final_answer 中绝对禁止出现大段推导，该内容必须全量放入【题目解析】节点。\n"
+        "2. 排版红线：清除所有 ** 加粗；公式定界符强制使用 $...$ 和 $$...$$，严禁 \\(...\\) 或 \\[...\\]。\n"
+        "3. 中文标点不得混入 LaTeX 公式内部。"
     )
 
     user_prompt = task_desc + "\n\n" + comparison_text
@@ -273,7 +279,13 @@ async def judge_answers(comparison_text, survivor_count, request_id=""):
         current_prompt = user_prompt
         current_temp = 0.1
         if attempt > 0:
-            current_prompt = user_prompt + "\n\n警告：你上一次输出的不是合法的 JSON，请严格检查括号闭合，确保所有花括号、方括号、引号成对出现。"
+            # 降级重试：只抽取各模型的【答案】行，避免万字推理洪流冲散裁判注意力
+            lite_lines = []
+            for line in comparison_text.split('\n'):
+                if "【答案】" in line or "【模型" in line:
+                    lite_lines.append(line)
+            lite_text = "\n".join(lite_lines) if lite_lines else comparison_text
+            current_prompt = f"当前有 {survivor_count} 份结论如下，请比对一致性并输出JSON：\n\n{lite_text}\n\n警告：上次输出JSON非法，请严格检查括号闭合与引号配对。"
             current_temp = 0.5
 
         try:
@@ -286,9 +298,10 @@ async def judge_answers(comparison_text, survivor_count, request_id=""):
                         {"role": "user", "content": current_prompt}
                     ],
                     temperature=current_temp,
-                    max_tokens=8192
+                    max_tokens=8192,
+                    extra_body={"thinking": {"type": "enabled", "budget_tokens": 4096}}
                 ),
-                timeout=120
+                timeout=300
             )
             raw_result = response.choices[0].message.content
             logger.info(f"[{request_id}] DeepSeek 裁判 OK")
@@ -356,7 +369,14 @@ async def solve_problem(file: UploadFile = File(...), token: str = Security(veri
 
     try:
         contents = await file.read()
-        base64_image = base64.b64encode(contents).decode('utf-8')
+        # 图片压缩：限制长边 ≤ 2048px，转 RGB 丢弃透明通道，JPEG 质量 85
+        with Image.open(io.BytesIO(contents)) as img:
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            img.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+            output_buffer = io.BytesIO()
+            img.save(output_buffer, format="JPEG", quality=85)
+            base64_image = base64.b64encode(output_buffer.getvalue()).decode('utf-8')
         # 统一极简用户指令（核心约束见 BASE_SYSTEM_PROMPT）
         user_instruction = "请识别图片并按系统规范解答。"
 
@@ -377,14 +397,34 @@ async def solve_problem(file: UploadFile = File(...), token: str = Security(veri
                 "alive": is_alive,
             })
 
-        survivors = [item for item in all_items if item["alive"]]
+        # 初步筛选网络响应成功的幸存者
+        network_survivors = [item for item in all_items if item["alive"]]
+
+        # 深度清洗：逻辑熔断与脏数据隔离
+        survivors = []
+        for s in network_survivors:
+            content = s["content"]["content"]
+            if re.search(r'【答案】', content):
+                survivors.append(s)
+            else:
+                logger.warning(f"[{request_id}] {s['id']} 输出缺失【答案】节点，判定为逻辑截断，触发物理隔离。")
+                s["alive"] = False
+                s["content"]["content"] += "\n\n(⚠️ 系统拦截：该模型陷入内部逻辑死循环，未能得出最终结论，已被系统强制隔离。)"
+
         survivor_count = len(survivors)
 
-        # 构建前端 raw_data（去名化）
+        # 构建前端 raw_data（去名化 + 清洗思考标签与前导废话）
         raw_data_for_frontend = {}
         for item in all_items:
             if item["alive"]:
-                raw_data_for_frontend[item["id"]] = item["content"]["content"]
+                content = item["content"]["content"]
+                # 剥离 thinking / think 标签及其内容
+                content = re.sub(r'<think(?:er)?>.*?</think(?:er)?>', '', content, flags=re.DOTALL | re.IGNORECASE)
+                # 截断模型不听指令强行输出的开场白，以【题目判定】为有效起点
+                idx = content.find("【题目判定】")
+                if idx != -1:
+                    content = content[idx:]
+                raw_data_for_frontend[item["id"]] = content.strip()
             else:
                 raw_data_for_frontend[item["id"]] = "⚠️ 该模型响应超时或异常，已自动屏蔽。"
 
