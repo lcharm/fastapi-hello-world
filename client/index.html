@@ -295,12 +295,16 @@
         btnCheckUpdate.disabled = true;
         btnCheckUpdate.innerText = '正在检索...';
         updateStatusMsg.innerText = '正在向云端对齐版本清单...';
-        
+
+        // 先让主进程重新拉取服务端 version.json，再刷新 UI
+        try {
+          await ipcRenderer.invoke('check-version-update');
+        } catch (_) {}
         await syncVersionStatus();
-        
+
         btnCheckUpdate.disabled = false;
         btnCheckUpdate.innerText = '🔄 检查更新';
-        
+
         if (globalInfo && globalInfo.version) {
           if (hasNewVersion(globalInfo.version, LOCAL_UI_VERSION)) {
             alert(`检查完成！发现云端更高版本 [ ${globalInfo.version} ]。\n\n系统已为您自动激活上方的"立即同步"横幅，点击即可一键无感热更新。`);
