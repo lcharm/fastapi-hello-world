@@ -285,9 +285,10 @@ async def judge_answers(comparison_text, survivor_count, request_id=""):
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": current_prompt}
                     ],
-                    temperature=current_temp
+                    temperature=current_temp,
+                    max_tokens=8192
                 ),
-                timeout=API_TIMEOUT
+                timeout=120
             )
             raw_result = response.choices[0].message.content
             logger.info(f"[{request_id}] DeepSeek 裁判 OK")
