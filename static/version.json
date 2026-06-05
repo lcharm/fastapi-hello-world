@@ -1,6 +1,11 @@
 {
-  "current": "v1.3.2",
+  "current": "v1.3.3",
   "versions": {
+    "v1.3.3": {
+      "date": "2026-06-05",
+      "note": "修复 LOCAL_UI_VERSION 版本号对齐，终结更新死循环",
+      "files": ["index.html", "tailwind.css", "main.js"]
+    },
     "v1.3.2": {
       "date": "2026-06-05",
       "note": "修复更新按钮不可见+横幅点击兜底+拼图居中",
