@@ -347,7 +347,18 @@
       }
 
       btnRetry.innerText = '正在无感热更...';
-      const result = await ipcRenderer.invoke('retry-update');
+      let result;
+      try {
+        result = await Promise.race([
+          ipcRenderer.invoke('retry-update'),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('更新超时，请重试')), 35000))
+        ]);
+      } catch (err) {
+        btnRetry.disabled = false;
+        btnRetry.innerText = '立即同步';
+        alert('更新失败：' + (err.message || '未知错误'));
+        return;
+      }
       if (result.ok) {
         document.getElementById('update-fail-bar').classList.add('hidden');
         alert('同步成功！全新生产要素已载入缓存。请重新启动软件以启用 [' + result.version + '] 版本。');
